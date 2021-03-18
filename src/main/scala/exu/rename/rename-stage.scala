@@ -26,7 +26,7 @@ import boom.common._
 import boom.util._
 
 /**
- * IO bundle to interface with the Register Rename logic
+ * IO bundle to interface with the Register Rename logic //IO捆绑包与寄存器重命名逻辑对接
  *
  * @param plWidth pipeline width
  * @param numIntPregs number of int physical registers
@@ -62,23 +62,23 @@ abstract class AbstractRenameStage(
 
     val kill = Input(Bool())
 
-    val dec_fire  = Input(Vec(plWidth, Bool())) // will commit state updates
-    val dec_uops  = Input(Vec(plWidth, new MicroOp()))
+    val dec_fire  = Input(Vec(plWidth, Bool())) // will commit state updates 将提交状态更新 //解码发出
+    val dec_uops  = Input(Vec(plWidth, new MicroOp())) //解码微操作
 
-    // physical specifiers available AND busy/ready status available.
-    val ren2_mask = Vec(plWidth, Output(Bool())) // mask of valid instructions
+    // physical specifiers available AND busy/ready status available. 物理说明符可用，忙/就绪状态可用。
+    val ren2_mask = Vec(plWidth, Output(Bool())) // mask of valid instructions 有效指令的掩码
     val ren2_uops = Vec(plWidth, Output(new MicroOp()))
 
-    // branch resolution (execute)
+    // branch resolution (execute)  //分支解析（执行）
     val brupdate = Input(new BrUpdateInfo())
 
-    val dis_fire  = Input(Vec(coreWidth, Bool()))
-    val dis_ready = Input(Bool())
+    val dis_fire  = Input(Vec(coreWidth, Bool()))  //分派发出
+    val dis_ready = Input(Bool())  //分派准备
 
-    // wakeup ports
+    // wakeup ports 唤醒端口
     val wakeups = Flipped(Vec(numWbPorts, Valid(new ExeUnitResp(xLen))))
 
-    // commit stage
+    // commit stage  提交阶段
     val com_valids = Input(Vec(plWidth, Bool()))
     val com_uops = Input(Vec(plWidth, new MicroOp()))
     val rbk_valids = Input(Vec(plWidth, Bool()))
@@ -86,6 +86,7 @@ abstract class AbstractRenameStage(
 
     val debug_rob_empty = Input(Bool())
     val debug = Output(new DebugRenameStageIO(numPhysRegs))
+
   })
 
   def BypassAllocations(uop: MicroOp, older_uops: Seq[MicroOp], alloc_reqs: Seq[Bool]): MicroOp
@@ -107,11 +108,11 @@ abstract class AbstractRenameStage(
 
 
   //-------------------------------------------------------------
-  // pipeline registers
+  // pipeline registers 流水线寄存器
 
   for (w <- 0 until plWidth) {
-    ren1_fire(w)          := io.dec_fire(w)
-    ren1_uops(w)          := io.dec_uops(w)
+    ren1_fire(w)          := io.dec_fire(w)         //解码fire赋值给ren1_fire
+    ren1_uops(w)          := io.dec_uops(w)         //解码微操作赋值给ren1_uops
   }
 
   for (w <- 0 until plWidth) {
@@ -121,13 +122,13 @@ abstract class AbstractRenameStage(
 
     next_uop := r_uop
 
-    when (io.kill) {
+    when (io.kill) {       //kill信号进来
       r_valid := false.B
-    } .elsewhen (ren2_ready) {
+    } .elsewhen (ren2_ready) {    //ren2_ready，即io.dis_ready
       r_valid := ren1_fire(w)
       next_uop := ren1_uops(w)
     } .otherwise {
-      r_valid := r_valid && !ren2_fire(w) // clear bit if uop gets dispatched
+      r_valid := r_valid && !ren2_fire(w) // clear bit if uop gets dispatched  如果uop被派遣，则清除位
       next_uop := r_uop
     }
 
@@ -149,8 +150,10 @@ abstract class AbstractRenameStage(
 /**
  * Rename stage that connets the map table, free list, and busy table.
  * Can be used in both the FP pipeline and the normal execute pipeline.
- *
- * @param plWidth pipeline width
+ * 重命名阶段 that 连接映射表，空闲列表和繁忙表。
+  * *可以在FP管道和常规执行管道中使用。
+  *
+  * @param plWidth pipeline width
  * @param numWbPorts number of int writeback ports
  * @param numWbPorts number of FP writeback ports
  */
@@ -165,8 +168,8 @@ class RenameStage(
   val rtype = if (float) RT_FLT else RT_FIX
 
   //-------------------------------------------------------------
-  // Helper Functions
-
+  // Helper Functions 辅助功能
+  // 旁路分配
   def BypassAllocations(uop: MicroOp, older_uops: Seq[MicroOp], alloc_reqs: Seq[Bool]): MicroOp = {
     val bypassed_uop = Wire(new MicroOp)
     bypassed_uop := uop
@@ -206,7 +209,7 @@ class RenameStage(
   }
 
   //-------------------------------------------------------------
-  // Rename Structures
+  // Rename Structures   重命名结构（映射表、空闲列表、忙表）
 
   val maptable = Module(new RenameMapTable(
     plWidth,
@@ -243,13 +246,13 @@ class RenameStage(
   }
 
   //-------------------------------------------------------------
-  // Rename Table
+  // Rename Table 重命名表
 
-  // Maptable inputs.
+  // Maptable inputs. 映射表输入。
   val map_reqs   = Wire(Vec(plWidth, new MapReq(lregSz)))
-  val remap_reqs = Wire(Vec(plWidth, new RemapReq(lregSz, pregSz)))
+  val remap_reqs = Wire(Vec(plWidth, new RemapReq(lregSz, pregSz)))  //lregSz:逻辑寄存器数量、pregSz:物理寄存器数量
 
-  // Generate maptable requests.
+  // Generate maptable requests. 生成映射表请求。
   for ((((ren1,ren2),com),w) <- ren1_uops zip ren2_uops zip io.com_uops.reverse zipWithIndex) {
     map_reqs(w).lrs1 := ren1.lrs1
     map_reqs(w).lrs2 := ren1.lrs2
@@ -262,14 +265,14 @@ class RenameStage(
   ren2_alloc_reqs zip rbk_valids.reverse zip remap_reqs map {
     case ((a,r),rr) => rr.valid := a || r}
 
-  // Hook up inputs.
+  // Hook up inputs.  连接输入。
   maptable.io.map_reqs    := map_reqs
   maptable.io.remap_reqs  := remap_reqs
   maptable.io.ren_br_tags := ren2_br_tags
   maptable.io.brupdate      := io.brupdate
   maptable.io.rollback    := io.rollback
 
-  // Maptable outputs.
+  // Maptable outputs.  映射表输出。
   for ((uop, w) <- ren1_uops.zipWithIndex) {
     val mappings = maptable.io.map_resps(w)
 
@@ -332,7 +335,7 @@ class RenameStage(
   for (w <- 0 until plWidth) {
     val can_allocate = freelist.io.alloc_pregs(w).valid
 
-    // Push back against Decode stage if Rename1 can't proceed.
+    // Push back against Decode stage if Rename1 can't proceed.  如果Rename1无法继续进行，则将其推迟到Decode阶段。
     io.ren_stalls(w) := (ren2_uops(w).dst_rtype === rtype) && !can_allocate
 
     val bypassed_uop = Wire(new MicroOp)
@@ -341,6 +344,7 @@ class RenameStage(
 
     io.ren2_uops(w) := GetNewUopAndBrMask(bypassed_uop, io.brupdate)
   }
+
 
   //-------------------------------------------------------------
   // Debug signals
@@ -396,6 +400,7 @@ class PredRenameStage(
   }
 
   current_ftq_idx := next_ftq_idx
+
 
   busy_table := ((busy_table.asUInt | to_busy.asUInt) & ~unbusy.asUInt).asBools
 }

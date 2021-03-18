@@ -83,6 +83,7 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val prs2             = UInt(maxPregSz.W)
   val prs3             = UInt(maxPregSz.W)
   val ppred            = UInt(log2Ceil(ftqSz).W)
+  val comefrom_rob     = Bool()
 
   val prs1_busy        = Bool()
   val prs2_busy        = Bool()

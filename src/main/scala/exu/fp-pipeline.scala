@@ -53,6 +53,9 @@ class FpPipeline(implicit p: Parameters) extends BoomModule with tile.HasFPUPara
 
     val debug_tsc_reg    = Input(UInt(width=xLen.W))
     val debug_wb_wdata   = Output(Vec(numWakeupPorts, UInt((fLen+1).W)))
+
+    val risk_table = Input(Vec(numIntPhysRegs,Bool()))
+    val fp_risk_table = Input(Vec(numFpPhysRegs,Bool()))
   })
 
   //**********************************
@@ -97,6 +100,8 @@ class FpPipeline(implicit p: Parameters) extends BoomModule with tile.HasFPUPara
     issue_unit.io.spec_ld_wakeup(w).bits := 0.U
   }
   issue_unit.io.ld_miss := false.B
+  issue_unit.io.idle_cycles := DontCare
+  issue_unit.io.return_issue := DontCare
 
   require (exe_units.numTotalBypassPorts == 0)
 
@@ -133,9 +138,20 @@ class FpPipeline(implicit p: Parameters) extends BoomModule with tile.HasFPUPara
     issue_wakeup.valid := writeback.valid
     issue_wakeup.bits.pdst  := writeback.bits.uop.pdst
     issue_wakeup.bits.poisoned := false.B
+    issue_wakeup.bits.debug_inst := writeback.bits.uop.debug_inst
+    issue_wakeup.bits.br_mask := writeback.bits.uop.br_mask
+    issue_wakeup.bits.risk_rob_idx := writeback.bits.uop.rob_idx
+    //issue_wakeup.bits.risk := writeback.bits.uop.risk
+    when(writeback.bits.uop.comefrom_rob){
+      issue_wakeup.bits.risk := false.B
+    } .otherwise{
+      issue_wakeup.bits.risk := Mux(writeback.bits.uop.fp_val,io.fp_risk_table(writeback.bits.uop.pdst),io.risk_table(writeback.bits.uop.pdst))
+    }
   }
+
   issue_unit.io.pred_wakeup_port.valid := false.B
   issue_unit.io.pred_wakeup_port.bits := DontCare
+
 
   //-------------------------------------------------------------
   // **** Register Read Stage ****
