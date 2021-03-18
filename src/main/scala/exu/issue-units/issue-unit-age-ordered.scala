@@ -21,7 +21,7 @@ import FUConstants._
 import boom.common._
 
 /**
- * Specific type of issue unit
+ * Specific type of issue unit      特定类型的issue单元
  *
  * @param params issue queue params
  * @param numWakeupPorts number of wakeup ports for the issue queue
@@ -33,12 +33,12 @@ class IssueUnitCollapsing(
   extends IssueUnit(params.numEntries, params.issueWidth, numWakeupPorts, params.iqType, params.dispatchWidth)
 {
   //-------------------------------------------------------------
-  // Figure out how much to shift entries by
+  // Figure out how much to shift entries by          找出将条目移动多少
 
   val maxShift = dispatchWidth
   val vacants = issue_slots.map(s => !(s.valid)) ++ io.dis_uops.map(_.valid).map(!_.asBool)
   val shamts_oh = Array.fill(numIssueSlots+dispatchWidth) {Wire(UInt(width=maxShift.W))}
-  // track how many to shift up this entry by by counting previous vacant spots
+  // track how many to shift up this entry by by counting previous vacant spots            通过计算以前的空位置来跟踪向上移动该条目的数量
   def SaturatingCounterOH(count_oh:UInt, inc: Bool, max: Int): UInt = {
      val next = Wire(UInt(width=max.W))
      next := count_oh
@@ -56,7 +56,7 @@ class IssueUnitCollapsing(
 
   //-------------------------------------------------------------
 
-  // which entries' uops will still be next cycle? (not being issued and vacated)
+  // which entries' uops will still be next cycle? (not being issued and vacated)         下一个周期将继续哪些条目？ （未issue和腾空）
   val will_be_valid = (0 until numIssueSlots).map(i => issue_slots(i).will_be_valid) ++
                       (0 until dispatchWidth).map(i => io.dis_uops(i).valid &&
                                                         !dis_uops(i).exception &&
@@ -79,6 +79,8 @@ class IssueUnitCollapsing(
   //-------------------------------------------------------------
   // Dispatch/Entry Logic
   // did we find a spot to slide the new dispatched uops into?
+  // 调度/输入逻辑
+  // 我们是否找到了将新派遣的uops滑入的位置？
 
   val will_be_available = (0 until numIssueSlots).map(i =>
                             (!issue_slots(i).will_be_valid || issue_slots(i).clear) && !(issue_slots(i).in_uop.valid))
@@ -108,6 +110,7 @@ class IssueUnitCollapsing(
     port_issued(w) = false.B
   }
 
+
   for (i <- 0 until numIssueSlots) {
     issue_slots(i).grant := false.B
     var uop_issued = false.B
@@ -125,4 +128,9 @@ class IssueUnitCollapsing(
       uop_issued = (requests(i) && can_allocate && !was_port_issued_yet) | uop_issued
     }
   }
+
+
+
+
+
 }
