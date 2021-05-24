@@ -235,55 +235,23 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
   for (i <- 0 until numWakeupPorts) {
     when (io.wakeup_ports(i).valid &&
          (io.wakeup_ports(i).bits.pdst === next_uop.prs1)) {
-      when(io.wakeup_ports(i).bits.debug_inst === 0xf8843703L.U && next_uop.debug_pc === 0x80001318L.U){
+      when(io.wakeup_ports(i).bits.debug_inst(15,0) === 0x2701L.U && next_uop.debug_pc === 0x80001d7aL.U){
         val xx = io.wakeup_ports(i).bits.risk
         val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-        printf(p"\nxx io.wakeup_ports(i).bits.risk =${xx} issued")
+        printf(p"\nxx io.wakeup_ports(i).bits.risk =${xx} ")
         printf(p"yy =${yy} ")
         printf(p"next_uop_mask =${next_uop.br_mask} ")
-        printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
         printf(p" cycles=${io.idle_cycles} ")
-        printf(" find 0xf8843703L in issue-slot 0x80001318L \n")
+        printf(" find 0x80001d7aL in issue-slot \n")
       }
-      when(io.wakeup_ports(i).bits.debug_inst === 0x0ff00793L.U && next_uop.debug_pc === 0x80001318L.U){
+      when(io.wakeup_ports(i).bits.debug_inst === 0x00054703L.U && next_uop.debug_pc === 0x800010eeL.U){
         val xx = io.wakeup_ports(i).bits.risk
         val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-        printf(p"\nxx11 io.wakeup_ports(i).bits.risk =${xx} issued")
+        printf(p"\nxx io.wakeup_ports(i).bits.risk =${xx} ")
         printf(p"yy =${yy} ")
         printf(p"next_uop_mask =${next_uop.br_mask} ")
-        printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
         printf(p" cycles=${io.idle_cycles} ")
-        printf(" find 0x0ff00793L in issue-slot 0x80001318L \n")
-      }
-       when(io.wakeup_ports(i).bits.debug_inst(15,0) === 0x0785L.U && next_uop.debug_pc === 0x80001318L.U){
-        val xx = io.wakeup_ports(i).bits.risk
-        val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-        printf(p"\nxx11 io.wakeup_ports(i).bits.risk =${xx} issued")
-        printf(p"yy =${yy} ")
-        printf(p"next_uop_mask =${next_uop.br_mask} ")
-        printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
-        printf(p" cycles=${io.idle_cycles} ")
-        printf(" find 0x0785L in issue-slot  0x80001318L\n")
-      }
-       when(io.wakeup_ports(i).bits.debug_inst === 0xf8f43423L.U && next_uop.debug_pc === 0x80001318L.U){
-        val xx = io.wakeup_ports(i).bits.risk
-        val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-        printf(p"\nxx11 io.wakeup_ports(i).bits.risk =${xx} issued")
-        printf(p"yy =${yy} ")
-        printf(p"next_uop_mask =${next_uop.br_mask} ")
-        printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
-        printf(p" cycles=${io.idle_cycles} ")
-        printf(" find 0xf8f43423L in issue-slot 0x80001318L \n")
-      }
-       when(io.wakeup_ports(i).bits.debug_inst === 0xf8843783L.U && next_uop.debug_pc === 0x80001318L.U){
-        val xx = io.wakeup_ports(i).bits.risk
-        val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-        printf(p"\nxx11 io.wakeup_ports(i).bits.risk =${xx} issued")
-        printf(p"yy =${yy} ")
-        printf(p"next_uop_mask =${next_uop.br_mask} ")
-        printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
-        printf(p" cycles=${io.idle_cycles} ")
-        printf(" find f8843783 in issue-slot  0x80001318L\n")
+        printf(" find 800010ee in issue-slot \n")
       }
       when(io.wakeup_ports(i).bits.risk =/= 0.U && io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)){
       //when(io.wakeup_ports(i).bits.risk =/= 0.U && io.wakeup_ports(i).bits.pdst =/= 0.U && next_uop.uses_ldq && io.wakeup_ports(i).bits.debug_inst(15,0) === 0x97baL.U && next_uop.debug_inst === 0x0007c783L.U){

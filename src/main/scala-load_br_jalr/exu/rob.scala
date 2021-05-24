@@ -468,11 +468,11 @@ class Rob(
       when( rob_val(i) =/= 0.U && rob_uop(i).pdst =/= 0.U && rob_uop(i).br_mask === 0.U && ((rob_uop(i).dst_rtype === RT_FIX && io.risk_table(rob_uop(i).pdst) === true.B) || (rob_uop(i).dst_rtype === RT_FLT && io.fp_risk_table(rob_uop(i).pdst) === true.B))){     // TODO
         val index_pdst = Mux(rob_uop(i).dst_rtype === RT_FLT,rob_uop(i).pdst + numIntPhysRegs.U,rob_uop(i).pdst)
         clear_risk_table(index_pdst) := 1.U
-        //when(rob_uop(i).debug_pc === 0x80001f40L.U){
-            printf("clear risk: pc=0x%x ", rob_uop(i).debug_pc)
+        when(rob_uop(i).debug_pc === 0x80001f40L.U){
+            printf("80001f40: pc=0x%x ", rob_uop(i).debug_pc)
             printf(p" pdst_clear=${rob_uop(i).pdst} ")
             printf(p" before:risk1=${rob_uop(i).risk1} ")
-        //}
+        }
         rob_uop(i).risk1 := false.B
         when(rob_uop(i).debug_pc === 0x80001f40L.U){
             printf(p" after:risk1=${rob_uop(i).risk1} \n")

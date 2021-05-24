@@ -135,7 +135,6 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
 
   val idle_cycles = Input(UInt(32.W))
   val storeaddr_not_get = Output(Bool())
-  val store_wuran = Output(Bool())
   val ldq_dep_mask = Output(Vec(numLdqEntries,UInt(numLdqEntries.W)))
   val ldq_valid = Output(Vec(numLdqEntries,Bool()))
   val stq_valid = Output(Vec(numStqEntries,Bool()))
@@ -215,7 +214,6 @@ class LDQEntry(implicit p: Parameters) extends BoomBundle()(p)
   val succeeded           = Bool()
   val order_fail          = Bool()
   val observed            = Bool()
-  //val store_risk          = Bool()
 
   val st_dep_mask         = UInt(numStqEntries.W) // list of stores older than us         //比我们更老的store名单
   val youngest_stq_idx    = UInt(stqAddrSz.W) // index of the oldest store younger than us  //比我们更年轻的 最老的store索引
@@ -248,8 +246,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val ldq = Reg(Vec(numLdqEntries, Valid(new LDQEntry)))          //创建ldq
   val stq = Reg(Vec(numStqEntries, Valid(new STQEntry)))          //创建stq
 
-  val xx = RegInit(VecInit(Seq.fill(numStqEntries){true.B}))
-  val yy = RegInit(VecInit(Seq.fill(numStqEntries){true.B}))
 
 
   val ldq_head         = Reg(UInt(ldqAddrSz.W))
@@ -366,7 +362,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       ldq(ld_enq_idx).bits.order_fail      := false.B
       ldq(ld_enq_idx).bits.observed        := false.B
       ldq(ld_enq_idx).bits.forward_std_val := false.B
-      //ldq(ld_enq_idx).bits.store_risk      := (0 until numStqEntries).map{ k => ((1.U << k) & next_live_store_mask) =/= 0.U && stq(k).valid && (io.core.st_risk_table(stq(k).bits.uop.prs1) || io.core.risk_table(stq(k).bits.uop.prs1)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
 
       //不匹配的入队load标签
       assert (ld_enq_idx === io.core.dis_uops(w).bits.ldq_idx, "[lsu] mismatch enq load tag.")
@@ -383,9 +378,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       stq(st_enq_idx).bits.data.valid := false.B
       stq(st_enq_idx).bits.committed  := false.B
       stq(st_enq_idx).bits.succeeded  := false.B
-      
-      xx(st_enq_idx) := true.B
-      yy(st_enq_idx) := true.B
 
       //不匹配的入队store标签
       assert (st_enq_idx === io.core.dis_uops(w).bits.stq_idx, "[lsu] mismatch enq store tag.")
@@ -488,24 +480,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val stq_incoming_idx = widthMap(i => exe_req(i).bits.uop.stq_idx)
   val stq_incoming_e   = widthMap(i => stq(stq_incoming_idx(i)))
-  
-   
-   for(i <- 0 until 8){
-        when(stq(i).valid && io.core.st_risk_table(stq(i).bits.uop.prs1) === false.B){
-            xx(i) := false.B
-        }
-        when(stq(i).valid && io.core.risk_table(stq(i).bits.uop.prs1) === false.B){
-            yy(i) := false.B
-        }
-    }
-    
-    
 
   val ldq_retry_idx = RegNext(AgePriorityEncoder((0 until numLdqEntries).map(i => {
     val e = ldq(i).bits
     val block = block_load_mask(i) || p1_block_load_mask(i)
-    val store_rid_risk = (0 until numStqEntries).map{ k =>((1.U << k) & ldq(i).bits.st_dep_mask) =/= 0.U && stq(k).valid && (xx(k) || yy (k)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
-    e.addr.valid && e.addr_is_virtual && !block && !store_rid_risk
+    e.addr.valid && e.addr_is_virtual && !block
   }), ldq_head))                                              //ldq重试idx，其中AgePriorityEncoder的逻辑是？
   val ldq_retry_e            = ldq(ldq_retry_idx)             //ldq重试条目
 
@@ -529,21 +508,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   
 
   // Can we fire a incoming load                                我们能发射传入的load吗
-  val can_fire_load_incoming = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_load)// && (exe_req(w).bits.uop.riskstore_after_load === false.B))
-  
-  /*when(exe_req(0).valid && exe_req(0).bits.uop.ctrl.is_load && (exe_req(0).bits.uop.riskstore_after_load =/= false.B)){
-      //ldq(exe_req(0).bits.uop.ldq_idx).bits.store_risk := true.B
-      printf(p"can fire load incoming")
-      printf("pc=0x%x\n",exe_req(0).bits.uop.debug_pc)
-      printf("ldq_idx=%d\n",exe_req(0).bits.uop.ldq_idx)
-      printf("ldq valid=%d\n",ldq(exe_req(0).bits.uop.ldq_idx).valid)
-  }
-  for(i <- 0 until numLdqEntries){
-      when(ldq(i).valid && ldq(i).bits.uop.riskstore_after_load === true.B && not_store_wuran){
-          ldq(i).bits.uop.riskstore_after_load === false.B
-          can_fire_load_reincoming
-      }
-  }*/
+  val can_fire_load_incoming = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_load)
 
   // Can we fire an incoming store addrgen + store datagen      我们可以发送一个传入的store addrgen + store datagen吗
   val can_fire_stad_incoming = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_sta
@@ -667,7 +632,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     //    -优先释放，这加快了缓存行写回和重新填充
     //    -Store提交是最低优先级的，因为它们不会阻塞年轻的指令，除非stq被填满
     //  DC：DCache
-    will_fire_load_incoming (w) := lsu_sched(can_fire_load_incoming (w) , true , true , true , false)  // TLB , DC , LCAM
+    will_fire_load_incoming (w) := lsu_sched(can_fire_load_incoming (w) , true , true , true , false) // TLB , DC , LCAM
     will_fire_stad_incoming (w) := lsu_sched(can_fire_stad_incoming (w) , true , false, true , true)  // TLB ,    , LCAM , ROB
     will_fire_sta_incoming  (w) := lsu_sched(can_fire_sta_incoming  (w) , true , false, true , true)  // TLB ,    , LCAM , ROB
     will_fire_std_incoming  (w) := lsu_sched(can_fire_std_incoming  (w) , false, false, false, true)  //                 , ROB
@@ -681,7 +646,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     will_fire_store_commit  (w) := lsu_sched(can_fire_store_commit  (w) , false, true , false, false) //     , DC
 
 
-    //assert(!(exe_req(w).valid && !(will_fire_load_incoming(w) || will_fire_stad_incoming(w) || will_fire_sta_incoming(w) || will_fire_std_incoming(w) || will_fire_sfence(w))))
+    assert(!(exe_req(w).valid && !(will_fire_load_incoming(w) || will_fire_stad_incoming(w) || will_fire_sta_incoming(w) || will_fire_std_incoming(w) || will_fire_sfence(w))))
 
     when (will_fire_load_wakeup(w)) {           //将发出load唤醒、将发出load传入、将发出load retry时，将对应的block_load_mask设为true
       block_load_mask(ldq_wakeup_idx)           := true.B
@@ -721,12 +686,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     Mux(will_fire_sta_retry     (w)  , stq_retry_e.bits.uop,
                     Mux(will_fire_hella_incoming(w)  , NullMicroOp,
                                                        NullMicroOp)))))     //exe阶段进入tlb的微操作
-
- /*for(w <- 0 until memWidth){
-   val xx = (0 until numStqEntries).map{ i => ((1.U << i) & next_live_store_mask) =/= 0.U && stq(i).valid && (io.core.st_risk_table(stq(i).bits.uop.prs1) || io.core.risk_table(stq(i).bits.uop.prs1)) && stq(i).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_) === 0.U
-   ldq(ld_enq_idx).bits.store_risk      := xx
-  }*/
-
 
 
   val exe_tlb_vaddr = widthMap(w =>
@@ -777,80 +736,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     dtlb.io.req(w).bits.size        := exe_size(w)
     dtlb.io.req(w).bits.cmd         := exe_cmd(w)
     dtlb.io.req(w).bits.passthrough := exe_passthr(w)
-    
-    
-    /*for(i <- 0 until 8){
-        when(stq(i).valid && io.core.st_risk_table(stq(i).bits.uop.prs1) === false.B){
-            xx(i) := false.B
-        }
-        when(stq(i).valid && io.core.risk_table(stq(i).bits.uop.prs1) === false.B){
-            yy(i) := false.B
-        }
-    }*/
-    
-    //dtlb.io.store_risk(w)           := (0 until numStqEntries).map{ k => (will_fire_load_incoming(w)) && ldq(exe_tlb_uop(w).ldq_idx).valid && ((1.U << k) & ldq(exe_tlb_uop(w).ldq_idx).bits.st_dep_mask) =/= 0.U && stq(k).valid && (xx(k) || yy (k)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
-    dtlb.io.store_risk(w)           := (will_fire_stad_incoming(w) || will_fire_sta_incoming(w)) && (io.core.risk_table(exe_tlb_uop(w).prs1) || io.core.st_risk_table(exe_tlb_uop(w).prs1)) && exe_tlb_uop(w).uses_stq && exe_tlb_uop(w).lrs1_rtype === RT_FIX
-    
-    val pdst_risk = Mux(exe_tlb_uop(w).dst_rtype === RT_FIX, io.core.risk_table(exe_tlb_uop(w).pdst), Mux(exe_tlb_uop(w).dst_rtype === RT_FLT, io.core.fp_risk_table(exe_tlb_uop(w).pdst), false.B) )
-    val prs1_risk = Mux(exe_tlb_uop(w).lrs1_rtype === RT_FIX, io.core.risk_table(exe_tlb_uop(w).prs1), Mux(exe_tlb_uop(w).lrs1_rtype === RT_FLT, io.core.fp_risk_table(exe_tlb_uop(w).prs1), false.B) )
-    val prs2_risk = Mux(exe_tlb_uop(w).lrs2_rtype === RT_FIX, io.core.risk_table(exe_tlb_uop(w).prs2), Mux(exe_tlb_uop(w).lrs2_rtype === RT_FLT, io.core.fp_risk_table(exe_tlb_uop(w).prs2), false.B) )
-    val prs3_risk = Mux(exe_tlb_uop(w).frs3_en, io.core.fp_risk_table(exe_tlb_uop(w).prs3), false.B)
-    val pdst_risk_st = Mux(exe_tlb_uop(w).dst_rtype === RT_FIX, io.core.st_risk_table(exe_tlb_uop(w).pdst), Mux(exe_tlb_uop(w).dst_rtype === RT_FLT, io.core.st_fp_risk_table(exe_tlb_uop(w).pdst), false.B) )
-    val prs1_risk_st = Mux(exe_tlb_uop(w).lrs1_rtype === RT_FIX, io.core.st_risk_table(exe_tlb_uop(w).prs1), Mux(exe_tlb_uop(w).lrs1_rtype === RT_FLT, io.core.st_fp_risk_table(exe_tlb_uop(w).prs1), false.B) )
-    val prs2_risk_st = Mux(exe_tlb_uop(w).lrs2_rtype === RT_FIX, io.core.st_risk_table(exe_tlb_uop(w).prs2), Mux(exe_tlb_uop(w).lrs2_rtype === RT_FLT, io.core.st_fp_risk_table(exe_tlb_uop(w).prs2), false.B) )
-    val prs3_risk_st = Mux(exe_tlb_uop(w).frs3_en, io.core.st_fp_risk_table(exe_tlb_uop(w).prs3), false.B)
-    
-    dtlb.io.load_risk(w)            :=  ( (prs1_risk || prs2_risk || prs3_risk) && pdst_risk ) || ( (prs1_risk_st || prs2_risk_st || prs3_risk_st) && pdst_risk_st )
   }
-  
-  for(i <- 0 until 8){
-      when(ldq(i).bits.uop.debug_pc === 0x80001310L.U && ldq(i).valid){
-          val xxxx = (0 until numStqEntries).map{ k => ((1.U << k) & ldq(i).bits.st_dep_mask) =/= 0.U && stq(k).valid && (io.core.st_risk_table(stq(k).bits.uop.prs1) || io.core.risk_table(stq(k).bits.uop.prs1)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
-          printf(p"xxxx=${xxxx} ")
-          printf(p"rob_idx=${ldq(i).bits.uop.rob_idx} ")
-          printf("pc=0x%x ",ldq(i).bits.uop.debug_pc)
-          printf(p"fire load=${(will_fire_load_incoming(0) || will_fire_load_retry(0) || will_fire_load_wakeup(0))} ")
-          printf(p"pdst=${ldq(i).bits.uop.pdst} ")
-          printf(p"st_dep_mask=${ldq(i).bits.st_dep_mask} \n")
-          for(j <- 0 until 8){
-              when( ((1.U << j) & ldq(i).bits.st_dep_mask) =/= 0.U){
-                  printf(p"j=${j} ")
-                  val xxx = xx(j)
-                  val yyy = yy(j)
-                  printf(p"xx=${xxx} ")
-                  printf(p"yy=${yyy} ")
-                  printf(p"br_mask=${stq(j).bits.uop.br_mask} ")
-                  printf(p"stq(j).valid=${stq(j).valid} ")
-                  printf("stq(j).bits.uop.pc=0x%x ",stq(j).bits.uop.debug_pc)
-                  printf(p"st-risk-pr1=${io.core.st_risk_table(stq(j).bits.uop.prs1)} ")
-                  printf(p" risk-pr1=${io.core.risk_table(stq(j).bits.uop.prs1)} ")
-                  printf(p"prs1=${stq(j).bits.uop.prs1} ")
-                  printf(p"lrs1rtype=${stq(j).bits.uop.lrs1_rtype === RT_FIX} \n")
-              }
-          
-          }
-      }
-      
-      /*when(ldq(i).bits.uop.debug_pc === 0x80002656L.U && ldq(i).valid){
-          val xxxx = (0 until numStqEntries).map{ k => ((1.U << k) & ldq(i).bits.st_dep_mask) =/= 0.U && stq(k).valid && (io.core.st_risk_table(stq(k).bits.uop.prs1) || io.core.risk_table(stq(k).bits.uop.prs1)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
-          printf(p"xxxx1=${xxxx} ")
-          //printf(p"ldq store_risk=${ldq(i).bits.store_risk} ")
-          printf(p"st_dep_mask1=${ldq(i).bits.st_dep_mask} \n")
-          for(j <- 0 until 8){
-              when( ((1.U << j) & ldq(i).bits.st_dep_mask) =/= 0.U){
-                  printf(p"j=${j} ")
-                  printf(p"stq(j).valid=${stq(j).valid} ")
-                  printf(p"risk pr1=${io.core.st_risk_table(stq(j).bits.uop.prs1)} ")
-                  printf(p"risk pr2=${io.core.risk_table(stq(j).bits.uop.prs1)} ")
-                  printf(p"lrs1rtype=${stq(j).bits.uop.lrs1_rtype === RT_FIX} \n")
-              }
-          
-          }
-      }*/
-  }
-  
-  
-  
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence
 
@@ -911,8 +797,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                         exe_tlb_vaddr(w)(corePgIdxBits-1,0)))         //tlb物理地址
   val exe_tlb_uncacheable = widthMap(w => !(dtlb.io.resp(w).cacheable))               //tlb不可缓存
 
-
-
   for (w <- 0 until memWidth) {
     //paddrs应该匹配
     assert (exe_tlb_paddr(w) === dtlb.io.resp(w).paddr || exe_req(w).bits.sfence.valid, "[lsu] paddrs should match.")
@@ -959,34 +843,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val dmem_req_fire = widthMap(w => dmem_req(w).valid && io.dmem.req.fire())  //指示dmem是否既就绪又有效
 
   val s0_executing_loads = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B)))
-
-  for (i <- 0 until numLdqEntries) {
-       /*when(ldq(i).bits.uop.debug_pc === 0x800010e0L.U){
-         printf(p"st_dep_mask =${ldq(i).bits.st_dep_mask} ")
-         printf(p"store0 =${stq(0).valid} ")
-         printf(p"store1 =${stq(1).valid} ")
-         printf(p"store2 =${stq(2).valid} ")
-         printf(p"store3 =${stq(3).valid} ")
-         printf(p"store4 =${stq(4).valid} ")
-         printf(p"store5 =${stq(5).valid} ")
-         printf(p"store6 =${stq(6).valid} ")
-         printf(p"store7 =${stq(7).valid} ")
-         printf("store0 =0x%x ",stq(0).bits.uop.debug_pc)
-         printf("store1 =0x%x ",stq(1).bits.uop.debug_pc)
-         printf("store2 =0x%x ",stq(2).bits.uop.debug_pc)
-         printf("store3 =0x%x ",stq(3).bits.uop.debug_pc)
-         printf("store4 =0x%x ",stq(4).bits.uop.debug_pc)
-         printf("store5 =0x%x ",stq(5).bits.uop.debug_pc)
-         printf("store6 =0x%x ",stq(6).bits.uop.debug_pc)
-         printf("store7 =0x%x ",stq(7).bits.uop.debug_pc)
-         printf(p"riskstore_after_load =${ldq(i).bits.uop.riskstore_after_load} ")
-         printf("find lsu 800010e0\n")
-       }*/
-       when(stq(i).bits.uop.debug_pc === 0x800010dcL.U && stq(i).bits.committed){
-         printf("find lsu 800010dc committed\n")
-       }
-  }
-
 
 
   for (w <- 0 until memWidth) {
@@ -1066,11 +922,15 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     }
 
 
-    when(dmem_req(w).valid && dmem_req(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+    when(dmem_req(w).bits.uop.debug_inst(31,0) === 0x00054783L.U){
       printf(p" cycles=${io.core.idle_cycles} ")
-      printf(p" rob_idx=${dmem_req(w).bits.uop.rob_idx} ")
       printf(p" ldq_idx=${dmem_req(w).bits.uop.ldq_idx} ")
-      printf(p"find lsu dmem(cache)_req-uop-enter 80001310\n")
+      printf(p"find lsu dmem(cache)_req-uop-enter 84\n")
+    }
+    when(dmem_req(w).bits.uop.debug_inst(31,0) === 0x0007c783L.U){
+      printf(p" cycles=${io.core.idle_cycles} ")
+      printf(p" ldq_idx=${dmem_req(w).bits.uop.ldq_idx} ")
+      printf(p"find lsu dmem(cache)_req-uop-enter 92\n")
     }
 
     //-------------------------------------------------------------
@@ -1377,28 +1237,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                           //如果在更年轻的load和我们之间观察到缓存行，则只有排序失败
             ldq(i).bits.order_fail := true.B
             failed_loads(i)        := true.B
-            printf(p"searcher_is_older ")
-            printf("pc = 0x%x ", l_bits.uop.debug_pc)
-            printf("rob_idx = %d \n", l_bits.uop.rob_idx)
           }
         } .elsewhen (lcam_ldq_idx(w) =/= i.U) {
-            printf(p"80001030-all lcam_ldq_idx(w) =/= i.U ")
-            printf(p" cycles=${io.core.idle_cycles} ")       
-            printf("pc = 0x%x ", l_bits.uop.debug_pc)
-            printf("rob_idx = %d ", l_bits.uop.rob_idx)
-            printf(p" l_bits.executed=${l_bits.executed} ")
-            printf(p" l_bits.succeeded=${l_bits.succeeded} ")
-            printf(p" nacking_loads=${nacking_loads(i)} \n")
           // The load is older, and either it hasn't executed, it was nacked, or it is ignoring its response
           // we need to kill ourselves, and prevent forwarding
           // load是旧的，它没有执行，或它是nack，或它正在忽略它的响应
           // 我们需要杀死自己，并阻止转发
           val older_nacked = nacking_loads(i) || RegNext(nacking_loads(i))
           when (!(l_bits.executed || l_bits.succeeded) || older_nacked) {
-            printf(p"io.dmem.s1_kill(w)   ")
-            printf(p" cycles=${io.core.idle_cycles} ")           
-            printf("pc = 0x%x ", l_bits.uop.debug_pc)
-            printf("rob_idx = %d \n", l_bits.uop.rob_idx)
             s1_set_execute(lcam_ldq_idx(w))    := false.B
             io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))   //在LSU的LCAM搜索阶段，如果排序失败(或可能转发)，杀死
             can_forward(w)                     := false.B                     //不可以转发
@@ -1417,28 +1263,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     io.core.stq_addr_valid(i) := stq(i).bits.addr.valid
     io.core.stq_addr_virtual(i) := stq(i).bits.addr_is_virtual
   }
-
-  for(w <- 0 until memWidth) {
-    when(exe_tlb_miss(0)) {
-      printf(p"tlb miss in lsu   ")
-      printf("pc=0x%x ",exe_tlb_uop(0).debug_pc)
-      printf("pdst=%d ",exe_tlb_uop(0).pdst)
-      printf("rob_idx=%d ",exe_tlb_uop(0).rob_idx)
-      printf(p"dmem_req(w).valid=${dmem_req(w).valid}   ")
-      printf(p"do_ld_search=${do_ld_search(w)}   ")
-      printf(p"will_fire_load_incoming =${will_fire_load_incoming}\n")
-    }
-     when(dmem_req(w).valid && dmem_req(w).bits.uop.debug_pc === 0x80001310L.U) {
-        printf(p"rob_idx = ${dmem_req(w).bits.uop.rob_idx} ")
-        printf(p"80001310 tlb miss in lsu  dmem become valid \n")
-     }
-     when(do_ld_search(w) && mem_ldq_e(w).valid && mem_ldq_e(w).bits.uop.debug_pc === 0x80001310L.U) {
-        printf(p"rob_idx = ${mem_ldq_e(w).bits.uop.rob_idx} ")
-        printf(p"80001310 tlb miss in lsu  do ld search \n")
-     }
-     
-  }
-
 
   for (w <- 0 until memWidth) {
 
@@ -1562,8 +1386,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   //(!stq(i).bits.addr.valid || stq(i).bits.addr_is_virtual) 代表做st搜索开始的时刻，st搜索结束时，推测性消失
     io.core.storeaddr_not_get := (0 until numStqEntries).map{ i => stq(i).valid && (!stq(i).bits.addr.valid || stq(i).bits.addr_is_virtual)}.reduce(_||_) =/= 0.U
 
-    io.core.store_wuran := (0 until numStqEntries).map{ i =>  stq(i).valid &&  ( (io.core.st_risk_table(stq(i).bits.uop.prs1) || io.core.risk_table(stq(i).bits.uop.prs1)) && stq(i).bits.uop.lrs1_rtype === RT_FIX)   }.reduce(_||_) =/= 0.U
-
     for (i <- 0 until numStqEntries) {             //遍历stq条目
     val s_addr = stq(i).bits.addr.bits
     val s_uop  = stq(i).bits.uop
@@ -1574,54 +1396,18 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val write_mask = GenByteMask(s_addr, s_uop.mem_size)
     for (w <- 0 until memWidth) {
       when (do_ld_search(w) && stq(i).valid && lcam_st_dep_mask(w)(i)) {       //ld搜索，stq条目有效，cam load前更老的store掩码
-      
-         when(lcam_uop(w).debug_pc === 0x80001310L.U){
-              printf(p"11111111111dword_addr_matches(w)" )
-              printf(p" cycles=${io.core.idle_cycles} ")
-              printf(p"pc = 80001310" )
-              printf(p"lcam_mask = ${((lcam_mask(w) & write_mask) === lcam_mask(w))} " )
-              printf(p"can_forward = ${can_forward(w)} " )              
-              printf(p"!s_uop.is_fence = ${!s_uop.is_fence} " )
-              printf(p"dword_addr_matches(w) = ${dword_addr_matches(w)} \n" )
-              printf(p"fired_load_incoming(w) || fired_load_retry(w) = ${fired_load_incoming(w) || fired_load_retry(w)} " )
-              printf(p"!mem_tlb_uncacheable(w) = ${!mem_tlb_uncacheable(w)} " )
-              printf(p"exe_tlb_uncacheable = ${exe_tlb_uncacheable(w)} " )
-              printf(p"dtlb.io.resp(w).cacheable = ${!(dtlb.io.resp(w).cacheable)} " )  
-              printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
-      
-      
         when (((lcam_mask(w) & write_mask) === lcam_mask(w)) && !s_uop.is_fence && dword_addr_matches(w) && can_forward(w)) //dword地址匹配，可以转发，不是fence
         {
           ldst_addr_matches(w)(i)            := true.B                        //我们在地址上冲突的store的掩码
           ldst_forward_matches(w)(i)         := true.B                        //我们可以转发的store的掩码
           io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))     //设置s1 kill
           s1_set_execute(lcam_ldq_idx(w))    := false.B                       //可以转发，就不用执行了
-          when(lcam_uop(w).debug_pc === 0x80001310L.U){
-              printf(p"can_forward(w)" )
-              printf(p"pc = 80001310" )
-              printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
         }
           .elsewhen (((lcam_mask(w) & write_mask) =/= 0.U) && dword_addr_matches(w))   //dword地址匹配，s_addr掩码与cam掩码 相与不为0
         {
           ldst_addr_matches(w)(i)            := true.B
           io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))
           s1_set_execute(lcam_ldq_idx(w))    := false.B
-          when(lcam_uop(w).debug_pc === 0x80001310L.U){
-              printf(p"dword_addr_matches(w)" )
-              printf(p" cycles=${io.core.idle_cycles} ")
-              printf(p"pc = 80001310" )
-              printf(p"lcam_mask = ${((lcam_mask(w) & write_mask) === lcam_mask(w))} " )
-              printf(p"can_forward = ${can_forward(w)} " )
-              printf(p"fired_load_incoming(w) || fired_load_retry(w) = ${fired_load_incoming(w) || fired_load_retry(w)} " )
-              printf(p"!mem_tlb_uncacheable(w) = ${!mem_tlb_uncacheable(w)} " )
-              printf(p"exe_tlb_uncacheable = ${exe_tlb_uncacheable(w)} " )
-              printf(p"dtlb.io.resp(w).cacheable = ${!(dtlb.io.resp(w).cacheable)} " )   
-              printf(p"!s_uop.is_fence = ${!s_uop.is_fence} " )
-              printf(p"dword_addr_matches(w) = ${dword_addr_matches(w)} " )
-              printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
         }
           .elsewhen (s_uop.is_fence || s_uop.is_amo)        //是fence或amo
         {
@@ -1635,12 +1421,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // Set execute bit in LDQ                //设置LDQ中的执行位
   for (i <- 0 until numLdqEntries) {
-    when (s1_set_execute(i)) { 
-    ldq(i).bits.executed := true.B
-    printf(p"executed true")
-    printf("pc=0x%x ",ldq(i).bits.uop.debug_pc)
-    printf(p"rob_idx=${ldq(i).bits.uop.rob_idx}\n")
-     }
+    when (s1_set_execute(i)) { ldq(i).bits.executed := true.B }
   }
 
   // Find the youngest store which the load is dependent on    //找到load所依赖的最年轻的store
@@ -1770,15 +1551,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     {
 
 
-        when(io.dmem.nack(w).bits.uop.debug_pc === 0x80001310L.U){
+        when(io.dmem.nack(w).bits.uop.debug_inst === 0x0007c783L.U){
           printf(p" cycles=${io.core.idle_cycles} ")
-          printf(" pc=0x%x ",io.dmem.nack(w).bits.uop.debug_pc)
-          printf(p" rob_idx=${io.dmem.nack(w).bits.uop.rob_idx} ")
-          printf(p"find lsu dmem-nack 80001310\n")
-        }
-        when(io.dmem.nack(w).bits.uop.debug_pc === 0x80001310L.U){
-          printf(p" cycles=${io.core.idle_cycles} ")
-          printf(p"find lsu dmem-nack 80001310\n")
+          printf(p"find lsu dmem-nack 92\n")
         }
 
       // We have to re-execute this!      我们得重新执行!
@@ -1825,21 +1600,17 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         io.core.exe(w).fresp.bits.data := io.dmem.resp(w).bits.data
 
 
-        when(io.dmem.resp(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+        when(io.dmem.resp(w).bits.uop.debug_inst(31,0) === 0x00054783L.U){
            printf(p" cycles=${io.core.idle_cycles} ")
            printf(p" ldq_idx=${io.dmem.resp(w).bits.uop.ldq_idx} ")
-           printf(p" rob_idx=${io.dmem.resp(w).bits.uop.rob_idx} ")
-           printf(p" pdst=${io.dmem.resp(w).bits.uop.pdst} ")
            printf(p" data=${io.dmem.resp(w).bits.data} ")
-           printf(p"find lsu dmem-resp 80001310\n")
+           printf(p"find lsu dmem-resp 84\n")
         }
-        when(io.dmem.resp(w).bits.uop.debug_pc(31,0) === 0x800012f2L.U){
+        when(io.dmem.resp(w).bits.uop.debug_inst(31,0) === 0x0007c783L.U){
            printf(p" cycles=${io.core.idle_cycles} ")
            printf(p" ldq_idx=${io.dmem.resp(w).bits.uop.ldq_idx} ")
-           printf(p" rob_idx=${io.dmem.resp(w).bits.uop.rob_idx} ")
-           printf(p" pdst=${io.dmem.resp(w).bits.uop.pdst} ")
            printf(p" data=${io.dmem.resp(w).bits.data} ")
-           printf(p"succeeded find lsu dmem-resp 800012f2\n")
+           printf(p"find lsu dmem-resp 92\n")
         }
 
         assert(send_iresp ^ send_fresp)
@@ -1868,12 +1639,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     when (dmem_resp_fired(w) && wb_forward_valid(w))      //dmem返回发出 && 写回转发有效
     {
       // Twiddle thumbs. Can't forward because dcache response takes precedence    //转动拇指。不能转发，因为dcache响应优先
-       when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_pc(31,0) === 0x80001310L.U){
-        printf(p" cycles=${io.core.idle_cycles} ")
-        printf(p" rob_idx=${ldq(wb_forward_ldq_idx(w)).bits.uop.rob_idx} ")
-        printf(p" dmem_resp_fired ")
-        printf(p" dmem_resp_fired(w) && wb_forward_valid(w) 80001310\n")
-      }
     }
       .elsewhen (!dmem_resp_fired(w) && wb_forward_valid(w))  //dmem返回不发出 && 写回转发有效，进行转发后的返回赋值
     {
@@ -1892,17 +1657,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
 
 
-      when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+      when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_inst(31,0) === 0x0007c783L.U){
         printf(p" cycles=${io.core.idle_cycles} ")
-        printf(p" rob_idx=${ldq(f_idx).bits.uop.rob_idx} ")
+        printf(p" ldq_idx=${ldq(f_idx).bits.uop.ldq_idx} ")
         printf(p" find lsu storegen=${storegen.data} ")
-        printf(p" find lsu loadgen=${loadgen.data} 80001310\n")
-      }
-      when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_pc(31,0) === 0x800012f2L.U){
-        printf(p" cycles=${io.core.idle_cycles} ")
-        printf(p" rob_idx=${ldq(f_idx).bits.uop.rob_idx} ")
-        printf(p" find lsu storegen=${storegen.data} ")
-        printf(p" find lsu loadgen=${loadgen.data} 800012f2\n")
+        printf(p" find lsu loadgen=${loadgen.data} 92\n")
       }
 
       io.core.exe(w).iresp.valid := (forward_uop.dst_rtype === RT_FIX) && data_ready && live
@@ -1920,12 +1679,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         ldq(f_idx).bits.forward_stq_idx := wb_forward_stq_idx(w)
 
         ldq(f_idx).bits.debug_wb_data   := loadgen.data
-        when(ldq(f_idx).bits.uop.debug_pc === 0x800012f2L.U){
-            printf(p"wb succeeded ")
-            printf(p" cycles=${io.core.idle_cycles} ")
-            printf("pc=0x%x ",ldq(f_idx).bits.uop.debug_pc)
-            printf(p"rob_idx=${ldq(f_idx).bits.uop.rob_idx} \n")
-        }
       }
     }
   }
@@ -2013,11 +1766,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       assert (ldq(idx).valid, "[lsu] trying to commit an un-allocated load entry.")
       assert ((ldq(idx).bits.executed || ldq(idx).bits.forward_std_val) && ldq(idx).bits.succeeded ,
         "[lsu] trying to commit an un-executed load entry.")
-        
-      when(ldq(idx).bits.uop.debug_pc === 0x80001310L.U){
-          printf(p"rob_idx = ${ldq(idx).bits.uop.rob_idx} ")
-          printf(p"pc = ${ldq(idx).bits.uop.debug_pc} \n")
-      }
 
       //load提交之后，将ldq条目对应位置空
       ldq(idx).valid                 := false.B

@@ -86,7 +86,6 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val comefrom_rob     = Bool()
   val risk1            = Bool()
   val risk2            = Bool()
-  val riskstore_after_load    = Bool()
 
   val prs1_busy        = Bool()
   val prs2_busy        = Bool()

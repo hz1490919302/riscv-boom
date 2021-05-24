@@ -23,8 +23,6 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
     val sfence = Input(Valid(new SFenceReq))
     val ptw = new TLBPTWIO
     val kill = Input(Bool())
-    val store_risk = Input(Vec(memWidth, Bool()))
-    val load_risk = Input(Vec(memWidth, Bool()))
   })
 
   class EntryData extends Bundle {
@@ -269,12 +267,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   val pf_inst_array = widthMap(w => ~(x_array(w) | ptw_ae_array(w)))
 
   val tlb_hit = widthMap(w => real_hits(w).orR)
-  val tlb_miss = widthMap(w => (vm_enabled(w) && !bad_va(w) && !tlb_hit(w)) )
-  when(tlb_miss(0)){
-    printf(p"tlb miss\n")
-    printf(p"io.store_risk(0)=${io.store_risk(0)}\n")
-    printf(p"io.load_risk(0)=${io.load_risk(0)}\n")
-  }
+  val tlb_miss = widthMap(w => vm_enabled(w) && !bad_va(w) && !tlb_hit(w))
 
   val sectored_plru = new PseudoLRU(sectored_entries.size)
   val superpage_plru = new PseudoLRU(superpage_entries.size)
@@ -307,7 +300,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
     io.resp(w).cacheable    := (c_array(w) & hits(w)).orR
     io.resp(w).must_alloc   := (must_alloc_array(w) & hits(w)).orR
     io.resp(w).prefetchable := (prefetchable_array(w) & hits(w)).orR && edge.manager.managers.forall(m => !m.supportsAcquireB || m.supportsHint).B
-    io.resp(w).miss  := do_refill || tlb_miss(w) || multipleHits(w) || io.store_risk(w)
+    io.resp(w).miss  := do_refill || tlb_miss(w) || multipleHits(w)
     io.resp(w).paddr := Cat(ppn(w), io.req(w).bits.vaddr(pgIdxBits-1, 0))
   }
 
@@ -318,7 +311,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   if (usingVM) {
     val sfence = io.sfence.valid
     for (w <- 0 until memWidth) {
-      when (io.req(w).fire() && (vm_enabled(w) && !bad_va(w) && !tlb_hit(w)) && !io.store_risk(w) && !io.load_risk(w) && state === s_ready) {
+      when (io.req(w).fire() && tlb_miss(w) && state === s_ready) {
         state := s_request
         r_refill_tag := vpn(w)
 
@@ -326,7 +319,6 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
         r_sectored_repl_addr  := replacementEntry(sectored_entries, sectored_plru.replace)
         r_sectored_hit_addr   := OHToUInt(sector_hits(w))
         r_sectored_hit        := sector_hits(w).orR
-        printf(p"tlb replace happen\n")
       }
     }
     when (state === s_request) {
