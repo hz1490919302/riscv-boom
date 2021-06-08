@@ -235,7 +235,7 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
   for (i <- 0 until numWakeupPorts) {
     when (io.wakeup_ports(i).valid &&
          (io.wakeup_ports(i).bits.pdst === next_uop.prs1)) {
-      when(io.wakeup_ports(i).bits.debug_inst === 0xf8843703L.U && next_uop.debug_pc === 0x80001318L.U){
+     /* when(io.wakeup_ports(i).bits.debug_inst === 0xf8843703L.U && next_uop.debug_pc === 0x80001318L.U){
         val xx = io.wakeup_ports(i).bits.risk
         val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
         printf(p"\nxx io.wakeup_ports(i).bits.risk =${xx} issued")
@@ -284,7 +284,7 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
         printf(p"next_uop_rob_idx=${next_uop.rob_idx} ")
         printf(p" cycles=${io.idle_cycles} ")
         printf(" find f8843783 in issue-slot  0x80001318L\n")
-      }
+      }*/
       when(io.wakeup_ports(i).bits.risk =/= 0.U && io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)){
       //when(io.wakeup_ports(i).bits.risk =/= 0.U && io.wakeup_ports(i).bits.pdst =/= 0.U && next_uop.uses_ldq && io.wakeup_ports(i).bits.debug_inst(15,0) === 0x97baL.U && next_uop.debug_inst === 0x0007c783L.U){
         //io.risk_pdst := io.wakeup_ports(i).bits.pdst
@@ -301,11 +301,6 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
       } .otherwise {
         p1 := true.B
         //
-        when(io.wakeup_ports(i).bits.debug_inst(15,0) === 0x2701L.U && next_uop.debug_pc === 0x80001d7aL.U){
-          val xx = io.wakeup_ports(i).bits.risk
-          val yy = io.wakeup_ports(i).bits.pdst =/= 0.U && (next_uop.is_br || next_uop.is_jalr)
-          printf(" find 0x80001d7aL in issue-slot11 \n")
-        }
       }
     }
 
@@ -389,7 +384,7 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
   // Request Logic         请求的逻辑
   io.request := is_valid && p1 && p2 && p3 && ppred && !io.kill
 
-  when(io.request && next_uop.debug_pc === 0x80001d7aL.U){
+  /*when(io.request && next_uop.debug_pc === 0x80001d7aL.U){
     printf(p" cycles=${io.idle_cycles} ")
     printf(p" state=${state} ")
      printf(p"success request0\n")
@@ -408,7 +403,7 @@ class IssueSlot(val numWakeupPorts: Int)(implicit p: Parameters)
     printf(p" cycles=${io.idle_cycles} ")
     printf(p" state=${state} ")
     printf(p"success request3\n")
-  }
+  }*/
 
   val high_priority = slot_uop.is_br || slot_uop.is_jal || slot_uop.is_jalr
   io.request_hp := io.request && high_priority

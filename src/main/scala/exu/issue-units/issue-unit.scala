@@ -194,9 +194,6 @@ abstract class IssueUnit(
     io.risk_pdst(i) := issue_slots(i).risk_pdst
     io.risk_debug_inst(i) := issue_slots(i).risk_debug_inst
     io.risk_rob_idx(i) := issue_slots(i).risk_rob_idx
-    when(io.risk_debug_inst(i) === 0x00054703L.U) {
-      printf(" start-risk-debug-inst3 \n")
-    }
   }
 
   io.event_empty := !(issue_slots.map(s => s.valid).reduce(_|_))

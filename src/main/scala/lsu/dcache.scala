@@ -485,14 +485,14 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
     dataReadArb.io.in(2).bits.req(w).addr   := io.lsu.req.bits(w).bits.addr
     dataReadArb.io.in(2).bits.req(w).way_en := ~0.U(nWays.W)
 
-    when(io.lsu.req.bits(w).bits.uop.debug_inst(31,0) === 0x00054783L.U){
+    /*when(io.lsu.req.bits(w).bits.uop.debug_inst(31,0) === 0x00054783L.U){
       printf(p" cycles=${io.lsu.idle_cycles } ")
       printf(p"find lsu dmem(cache)-new-request-84\n")
     }
     when(io.lsu.req.bits(w).bits.uop.debug_inst(31,0) === 0x0007c783L.U) {
       printf(p" cycles=${io.lsu.idle_cycles} ")
       printf(p"find lsu dmem(cache)-new-request-92\n")
-    }
+    }*/
 
   }
 
@@ -553,7 +553,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   assert(!(wb.io.meta_read.fire() ^ wb.io.data_req.fire()))
 
   when(wb_fire){
-    printf(p" lsu wb-fire =true \n")
+    //printf(p" lsu wb-fire =true \n")
   }
 
 
@@ -573,7 +573,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   // Prober does not need to read data array
 
   when(prober_fire){
-    printf(p" lsu prober-fire =true \n")
+    //printf(p" lsu prober-fire =true \n")
   }
 
 
@@ -592,7 +592,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   // Prefetch does not need to read data array
 
   when(prefetch_fire){
-    printf(p" lsu prefetch_fire =true \n")
+    //printf(p" lsu prefetch_fire =true \n")
   }
 
   val s0_valid = Mux(io.lsu.req.fire(), VecInit(io.lsu.req.bits.map(_.valid)),
@@ -807,7 +807,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
 
     for(w <- 0 until memWidth) {
 
-      when(s2_req(w).uop.debug_inst === 0x00054783L.U) {
+      /*when(s2_req(w).uop.debug_inst === 0x00054783L.U) {
         printf(p" pdst=${s2_req(w).uop.pdst} ")
         printf(p" mask=${s2_req(w).uop.br_mask} ")
         printf(p" prs1-risk=${io.lsu.risk_table(s2_req(w).uop.prs1)} ")
@@ -828,7 +828,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
         printf(p" fp_val=${s2_req(w).uop.fp_val} ")
         printf(p" cycles=${io.lsu.idle_cycles} ")
         printf(p"find lsu replace=true 92\n")
-      }
+      }*/
     }
     replacer.miss }    //发生mshrs fire(cache未命中)时，cache随机替换
   tl_out.a <> mshrs.io.mem_acquire
@@ -845,7 +845,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   mshrs.io.prober_idle  := prober.io.req.ready && !lrsc_valid
 
   when(prober.io.req.valid){
-    printf(" prober.io.req.valid=true.B \n")
+    //printf(" prober.io.req.valid=true.B \n")
   }
 
   // refills
@@ -875,7 +875,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   wb.io.mem_grant       := tl_out.d.fire() && tl_out.d.bits.source === cfg.nMSHRs.U
 
   when(wb.io.req.valid){
-    printf(" wb.io.req.valid=true.B \n")
+    //printf(" wb.io.req.valid=true.B \n")
   }
 
   TLArbiter.lowest(edge, io.lsu.release, wb.io.lsu_release, prober.io.lsu_release)
@@ -914,7 +914,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
       printf(p"find lsu dmem-cache-resp 92\n")
     }*/
 
-      when(s2_req(w).uop.debug_inst === 0x00054783L.U  && s2_valid(w) && s2_send_resp(w)) {
+      /*when(s2_req(w).uop.debug_inst === 0x00054783L.U  && s2_valid(w) && s2_send_resp(w)) {
         printf(p" pdst=${s2_req(w).uop.pdst} ")
         printf(p" mask=${s2_req(w).uop.br_mask} ")
         printf(p" prs1-risk=${io.lsu.risk_table(s2_req(w).uop.prs1)} ")
@@ -933,7 +933,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
         printf(p" fp_val=${s2_req(w).uop.fp_val} ")
         printf(p" cycles=${io.lsu.idle_cycles} ")
         printf(p"find lsu dmem-cache-resp 92\n")
-      }
+      }*/
 
 
   }
@@ -981,7 +981,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
         isWrite(s2_req(w).uop.mem_cmd)) &&
       ((pdst_risk && (prs1_risk || prs2_risk || prs3_risk)) || (pdst_risk_st && (prs1_risk_st || prs2_risk_st || prs3_risk_st)) ) )
     {
-      when(s2_req(w).uop.debug_pc === 0x800011b0L.U){
+      /*when(s2_req(w).uop.debug_pc === 0x800011b0L.U){
         printf("\ndispatch load 800011b0 dcache-nack\n")
       }
       //向lsu发出延时信号(nack试试)
@@ -989,7 +989,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
       printf(p" risk_table_pdst=${io.lsu.risk_table(s2_req(w).uop.pdst)} ")
       printf(p" risk_table_prs1=${io.lsu.risk_table(s2_req(w).uop.prs1)} ")
       printf(p" risk_table_prs2=${io.lsu.risk_table(s2_req(w).uop.prs2)} ")
-      printf(p"find lsu dcache-nack\n")
+      printf(p"find lsu dcache-nack\n")*/
       io.lsu.nack(w).valid := true.B
 
     } .otherwise {
@@ -1004,7 +1004,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
 
     assert(!(io.lsu.nack(w).valid && s2_type =/= t_lsu))
 
-    when(resp(w).bits.uop.debug_inst === 0x00054783L.U && resp(w).valid &&
+    /*when(resp(w).bits.uop.debug_inst === 0x00054783L.U && resp(w).valid &&
       !(io.lsu.exception && resp(w).bits.uop.uses_ldq) &&
       !IsKilledByBranch(io.lsu.brupdate, resp(w).bits.uop) && mshrs.io.resp.ready){
       printf(p" cycles=${io.lsu.idle_cycles} ")
@@ -1021,7 +1021,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
         !(io.lsu.exception && resp(w).bits.uop.uses_ldq) &&
         !IsKilledByBranch(io.lsu.brupdate, resp(w).bits.uop) && mshrs.io.resp.ready} ")
       printf(p"find lsu dmem-ucache-resp 92\n")
-    }
+    }*/
 
   }
 

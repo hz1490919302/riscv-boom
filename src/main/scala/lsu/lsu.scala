@@ -806,7 +806,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   for(i <- 0 until 8){
       when(ldq(i).bits.uop.debug_pc === 0x80001310L.U && ldq(i).valid){
           val xxxx = (0 until numStqEntries).map{ k => ((1.U << k) & ldq(i).bits.st_dep_mask) =/= 0.U && stq(k).valid && (io.core.st_risk_table(stq(k).bits.uop.prs1) || io.core.risk_table(stq(k).bits.uop.prs1)) && stq(k).bits.uop.lrs1_rtype === RT_FIX  }.reduce(_||_)
-          printf(p"xxxx=${xxxx} ")
+         /* printf(p"xxxx=${xxxx} ")
           printf(p"rob_idx=${ldq(i).bits.uop.rob_idx} ")
           printf("pc=0x%x ",ldq(i).bits.uop.debug_pc)
           printf(p"fire load=${(will_fire_load_incoming(0) || will_fire_load_retry(0) || will_fire_load_wakeup(0))} ")
@@ -828,7 +828,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                   printf(p"lrs1rtype=${stq(j).bits.uop.lrs1_rtype === RT_FIX} \n")
               }
           
-          }
+          }*/
       }
       
       /*when(ldq(i).bits.uop.debug_pc === 0x80002656L.U && ldq(i).valid){
@@ -982,9 +982,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
          printf(p"riskstore_after_load =${ldq(i).bits.uop.riskstore_after_load} ")
          printf("find lsu 800010e0\n")
        }*/
-       when(stq(i).bits.uop.debug_pc === 0x800010dcL.U && stq(i).bits.committed){
-         printf("find lsu 800010dc committed\n")
-       }
   }
 
 
@@ -1066,12 +1063,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     }
 
 
-    when(dmem_req(w).valid && dmem_req(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+    /*when(dmem_req(w).valid && dmem_req(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
       printf(p" cycles=${io.core.idle_cycles} ")
       printf(p" rob_idx=${dmem_req(w).bits.uop.rob_idx} ")
       printf(p" ldq_idx=${dmem_req(w).bits.uop.ldq_idx} ")
       printf(p"find lsu dmem(cache)_req-uop-enter 80001310\n")
-    }
+    }*/
 
     //-------------------------------------------------------------
     // Write Addr into the LAQ/SAQ                 把地址写入LAQ/SAQ
@@ -1377,28 +1374,28 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                           //如果在更年轻的load和我们之间观察到缓存行，则只有排序失败
             ldq(i).bits.order_fail := true.B
             failed_loads(i)        := true.B
-            printf(p"searcher_is_older ")
+            /*printf(p"searcher_is_older ")
             printf("pc = 0x%x ", l_bits.uop.debug_pc)
-            printf("rob_idx = %d \n", l_bits.uop.rob_idx)
+            printf("rob_idx = %d \n", l_bits.uop.rob_idx)*/
           }
         } .elsewhen (lcam_ldq_idx(w) =/= i.U) {
-            printf(p"80001030-all lcam_ldq_idx(w) =/= i.U ")
+            /*printf(p"80001030-all lcam_ldq_idx(w) =/= i.U ")
             printf(p" cycles=${io.core.idle_cycles} ")       
             printf("pc = 0x%x ", l_bits.uop.debug_pc)
             printf("rob_idx = %d ", l_bits.uop.rob_idx)
             printf(p" l_bits.executed=${l_bits.executed} ")
             printf(p" l_bits.succeeded=${l_bits.succeeded} ")
-            printf(p" nacking_loads=${nacking_loads(i)} \n")
+            printf(p" nacking_loads=${nacking_loads(i)} \n")*/
           // The load is older, and either it hasn't executed, it was nacked, or it is ignoring its response
           // we need to kill ourselves, and prevent forwarding
           // load是旧的，它没有执行，或它是nack，或它正在忽略它的响应
           // 我们需要杀死自己，并阻止转发
           val older_nacked = nacking_loads(i) || RegNext(nacking_loads(i))
           when (!(l_bits.executed || l_bits.succeeded) || older_nacked) {
-            printf(p"io.dmem.s1_kill(w)   ")
+            /*printf(p"io.dmem.s1_kill(w)   ")
             printf(p" cycles=${io.core.idle_cycles} ")           
             printf("pc = 0x%x ", l_bits.uop.debug_pc)
-            printf("rob_idx = %d \n", l_bits.uop.rob_idx)
+            printf("rob_idx = %d \n", l_bits.uop.rob_idx)*/
             s1_set_execute(lcam_ldq_idx(w))    := false.B
             io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))   //在LSU的LCAM搜索阶段，如果排序失败(或可能转发)，杀死
             can_forward(w)                     := false.B                     //不可以转发
@@ -1418,7 +1415,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     io.core.stq_addr_virtual(i) := stq(i).bits.addr_is_virtual
   }
 
-  for(w <- 0 until memWidth) {
+  /*for(w <- 0 until memWidth) {
     when(exe_tlb_miss(0)) {
       printf(p"tlb miss in lsu   ")
       printf("pc=0x%x ",exe_tlb_uop(0).debug_pc)
@@ -1437,10 +1434,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         printf(p"80001310 tlb miss in lsu  do ld search \n")
      }
      
-  }
+  }*/
 
 
-  for (w <- 0 until memWidth) {
+  /*for (w <- 0 until memWidth) {
 
     when(io.core.testissued){
       printf(p"find st_dep_mask=${ldq(dmem_req(w).bits.uop.ldq_idx).bits.st_dep_mask} when 84-testissued\n")
@@ -1555,7 +1552,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     }
 
 
-  }
+  }*/
   //推测执行时，分支地址求解并检测后，1继续执行->离开推测窗口，2回滚->也离开了推测窗口
   //推测执行时，store指令地址解析并检测有无先前load地址一样后，1一样且未转发->回滚 2继续执行->离开推测窗口
   //遍历stq，判断有无地址未解析的store
@@ -1575,7 +1572,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     for (w <- 0 until memWidth) {
       when (do_ld_search(w) && stq(i).valid && lcam_st_dep_mask(w)(i)) {       //ld搜索，stq条目有效，cam load前更老的store掩码
       
-         when(lcam_uop(w).debug_pc === 0x80001310L.U){
+         /*when(lcam_uop(w).debug_pc === 0x80001310L.U){
               printf(p"11111111111dword_addr_matches(w)" )
               printf(p" cycles=${io.core.idle_cycles} ")
               printf(p"pc = 80001310" )
@@ -1588,7 +1585,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
               printf(p"exe_tlb_uncacheable = ${exe_tlb_uncacheable(w)} " )
               printf(p"dtlb.io.resp(w).cacheable = ${!(dtlb.io.resp(w).cacheable)} " )  
               printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
+          }*/
       
       
         when (((lcam_mask(w) & write_mask) === lcam_mask(w)) && !s_uop.is_fence && dword_addr_matches(w) && can_forward(w)) //dword地址匹配，可以转发，不是fence
@@ -1597,18 +1594,18 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
           ldst_forward_matches(w)(i)         := true.B                        //我们可以转发的store的掩码
           io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))     //设置s1 kill
           s1_set_execute(lcam_ldq_idx(w))    := false.B                       //可以转发，就不用执行了
-          when(lcam_uop(w).debug_pc === 0x80001310L.U){
+          /*when(lcam_uop(w).debug_pc === 0x80001310L.U){
               printf(p"can_forward(w)" )
               printf(p"pc = 80001310" )
               printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
+          }*/
         }
           .elsewhen (((lcam_mask(w) & write_mask) =/= 0.U) && dword_addr_matches(w))   //dword地址匹配，s_addr掩码与cam掩码 相与不为0
         {
           ldst_addr_matches(w)(i)            := true.B
           io.dmem.s1_kill(w)                 := RegNext(dmem_req_fire(w))
           s1_set_execute(lcam_ldq_idx(w))    := false.B
-          when(lcam_uop(w).debug_pc === 0x80001310L.U){
+          /*when(lcam_uop(w).debug_pc === 0x80001310L.U){
               printf(p"dword_addr_matches(w)" )
               printf(p" cycles=${io.core.idle_cycles} ")
               printf(p"pc = 80001310" )
@@ -1621,7 +1618,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
               printf(p"!s_uop.is_fence = ${!s_uop.is_fence} " )
               printf(p"dword_addr_matches(w) = ${dword_addr_matches(w)} " )
               printf(p"rob_idx = ${lcam_uop(w).rob_idx} \n" )
-          }
+          }*/
         }
           .elsewhen (s_uop.is_fence || s_uop.is_amo)        //是fence或amo
         {
@@ -1637,9 +1634,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   for (i <- 0 until numLdqEntries) {
     when (s1_set_execute(i)) { 
     ldq(i).bits.executed := true.B
-    printf(p"executed true")
+    /*printf(p"executed true")
     printf("pc=0x%x ",ldq(i).bits.uop.debug_pc)
-    printf(p"rob_idx=${ldq(i).bits.uop.rob_idx}\n")
+    printf(p"rob_idx=${ldq(i).bits.uop.rob_idx}\n")*/
      }
   }
 
@@ -1770,7 +1767,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     {
 
 
-        when(io.dmem.nack(w).bits.uop.debug_pc === 0x80001310L.U){
+        /*when(io.dmem.nack(w).bits.uop.debug_pc === 0x80001310L.U){
           printf(p" cycles=${io.core.idle_cycles} ")
           printf(" pc=0x%x ",io.dmem.nack(w).bits.uop.debug_pc)
           printf(p" rob_idx=${io.dmem.nack(w).bits.uop.rob_idx} ")
@@ -1779,7 +1776,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         when(io.dmem.nack(w).bits.uop.debug_pc === 0x80001310L.U){
           printf(p" cycles=${io.core.idle_cycles} ")
           printf(p"find lsu dmem-nack 80001310\n")
-        }
+        }*/
 
       // We have to re-execute this!      我们得重新执行!
       when (io.dmem.nack(w).bits.is_hella)          //hella的dmem缺失
@@ -1825,7 +1822,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         io.core.exe(w).fresp.bits.data := io.dmem.resp(w).bits.data
 
 
-        when(io.dmem.resp(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+        /*when(io.dmem.resp(w).bits.uop.debug_pc(31,0) === 0x80001310L.U){
            printf(p" cycles=${io.core.idle_cycles} ")
            printf(p" ldq_idx=${io.dmem.resp(w).bits.uop.ldq_idx} ")
            printf(p" rob_idx=${io.dmem.resp(w).bits.uop.rob_idx} ")
@@ -1840,7 +1837,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
            printf(p" pdst=${io.dmem.resp(w).bits.uop.pdst} ")
            printf(p" data=${io.dmem.resp(w).bits.data} ")
            printf(p"succeeded find lsu dmem-resp 800012f2\n")
-        }
+        }*/
 
         assert(send_iresp ^ send_fresp)
         dmem_resp_fired(w) := true.B       //dmem阶段返回 发出
@@ -1892,7 +1889,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
 
 
-      when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_pc(31,0) === 0x80001310L.U){
+      /*when(ldq(wb_forward_ldq_idx(w)).bits.uop.debug_pc(31,0) === 0x80001310L.U){
         printf(p" cycles=${io.core.idle_cycles} ")
         printf(p" rob_idx=${ldq(f_idx).bits.uop.rob_idx} ")
         printf(p" find lsu storegen=${storegen.data} ")
@@ -1903,7 +1900,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         printf(p" rob_idx=${ldq(f_idx).bits.uop.rob_idx} ")
         printf(p" find lsu storegen=${storegen.data} ")
         printf(p" find lsu loadgen=${loadgen.data} 800012f2\n")
-      }
+      }*/
 
       io.core.exe(w).iresp.valid := (forward_uop.dst_rtype === RT_FIX) && data_ready && live
       io.core.exe(w).fresp.valid := (forward_uop.dst_rtype === RT_FLT) && data_ready && live
@@ -1920,12 +1917,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         ldq(f_idx).bits.forward_stq_idx := wb_forward_stq_idx(w)
 
         ldq(f_idx).bits.debug_wb_data   := loadgen.data
-        when(ldq(f_idx).bits.uop.debug_pc === 0x800012f2L.U){
-            printf(p"wb succeeded ")
-            printf(p" cycles=${io.core.idle_cycles} ")
-            printf("pc=0x%x ",ldq(f_idx).bits.uop.debug_pc)
-            printf(p"rob_idx=${ldq(f_idx).bits.uop.rob_idx} \n")
-        }
       }
     }
   }
@@ -2014,10 +2005,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       assert ((ldq(idx).bits.executed || ldq(idx).bits.forward_std_val) && ldq(idx).bits.succeeded ,
         "[lsu] trying to commit an un-executed load entry.")
         
-      when(ldq(idx).bits.uop.debug_pc === 0x80001310L.U){
-          printf(p"rob_idx = ${ldq(idx).bits.uop.rob_idx} ")
-          printf(p"pc = ${ldq(idx).bits.uop.debug_pc} \n")
-      }
 
       //load提交之后，将ldq条目对应位置空
       ldq(idx).valid                 := false.B

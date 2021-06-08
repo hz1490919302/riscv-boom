@@ -61,7 +61,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     val lsu = Flipped(new boom.lsu.LSUCoreIO)                               //load、store单元
     val ptw_tlb = new freechips.rocketchip.rocket.TLBPTWIO()                //page-table walker TLB
     val trace = Output(Vec(coreParams.retireWidth, new ExtendedTracedInstruction))  //输出： trace（wdata是什么）
-    val fcsr_rm = UInt(freechips.rocketchip.tile.FPConstants.RM_SZ.W)       //FPU
+    val fcsr_rm = UInt(freechips.rocketchip.tile.FPConstants.RM_SZ.W)       //FPU 
   }
   //**********************************
   // construct all of the modules  构造所有模块
@@ -189,9 +189,21 @@ class BoomCore(implicit p: Parameters) extends BoomModule
 
   for(i <- 0 until back_brinfo_size){
     brinfosback(i).valid := false.B
+    //brinfos(i+1).valid := false.B
     brinfos(i+1) <> brinfosback(i)
     rob.io.comefrom_rob(i) <> brinfosback(i).uop.comefrom_rob
+    rob.io.mispredict(i) <> brinfosback(i).mispredict
+    rob.io.comefrom_rob(i) <> brinfos(i+1).uop.comefrom_rob
+    rob.io.mispredict(i) <> brinfos(i+1).mispredict
     rob.io.brinfosback_valid(i) <> brinfosback_valid(i)
+    rob.io.brinfosback_valid1(i) <> RegNext(brinfosback_valid(i))
+    rob.io.brinfosback_valid2(i) <> RegNext(RegNext(brinfosback_valid(i)))
+    rob.io.brinfosback_valid3(i) <> RegNext(RegNext(RegNext(brinfosback_valid(i))))
+    rob.io.brinfosback_valid4(i) <> RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))
+    rob.io.brinfosback_valid5(i) <> RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))
+    rob.io.brinfosback_valid6(i) <> RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))
+    rob.io.brinfosback_valid7(i) <> RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))))
+    rob.io.brinfosback_valid8(i) <> RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))))
   }
   
   
@@ -232,14 +244,14 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     val prs1_risk = Mux(exe_units.alu_units(0).io.brinfo.uop.lrs1_rtype === RT_FIX, risk_table(exe_units.alu_units(0).io.brinfo.uop.prs1), Mux(exe_units.alu_units(0).io.brinfo.uop.lrs1_rtype === RT_FLT, fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs1), false.B) )
     val prs2_risk = Mux(exe_units.alu_units(0).io.brinfo.uop.lrs2_rtype === RT_FIX, risk_table(exe_units.alu_units(0).io.brinfo.uop.prs2), Mux(exe_units.alu_units(0).io.brinfo.uop.lrs2_rtype === RT_FLT, fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs2), false.B) )
     //val prs3_risk = Mux(exe_units.alu_units(0).io.brinfo.uop.frs3_en, fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs3), false.B)
-
     val prs1_risk_st = Mux(exe_units.alu_units(0).io.brinfo.uop.lrs1_rtype === RT_FIX, st_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs1), Mux(exe_units.alu_units(0).io.brinfo.uop.lrs1_rtype === RT_FLT, st_fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs1), false.B) )
     val prs2_risk_st = Mux(exe_units.alu_units(0).io.brinfo.uop.lrs2_rtype === RT_FIX, st_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs2), Mux(exe_units.alu_units(0).io.brinfo.uop.lrs2_rtype === RT_FLT, st_fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs2), false.B) )
     //val prs3_risk_st = Mux(exe_units.alu_units(0).io.brinfo.uop.frs3_en, st_fp_risk_table(exe_units.alu_units(0).io.brinfo.uop.prs3), false.B)
-    
+  //分支是否安全
   val all_risk = prs1_risk || prs2_risk || prs1_risk_st || prs2_risk_st
   val half_risk = prs1_risk || prs2_risk
   
+  //安全的分支解析结果直接运用
   brinfos(0) := exe_units.alu_units(0).io.brinfo
   brinfos(0).valid := exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid && !(all_risk) //only br_mask? exe_units.alu_units(0).io.brinfo.uop.br_mask =/= 0.U
   
@@ -247,70 +259,142 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   when(exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid && (!(all_risk))){  //only br_mask?  all_risk === false.B
     printf(p"dispatch-mask-0:brinfo_rob_idx=${exe_units.alu_units(0).io.brinfo.uop.rob_idx} ")
     printf(p"mispredict=${exe_units.alu_units(0).io.brinfo.mispredict} ")
+    printf(p" cycles=${idle_cycles.value} ") 
     printf("brinfo_debug_pc=0x%x ",exe_units.alu_units(0).io.brinfo.uop.debug_pc)
     printf(p"brinfo_mask=${exe_units.alu_units(0).io.brinfo.uop.br_mask}\n")
   }
-  when(exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid && ((all_risk))){  //only br_mask?  all_risk =/= false.B
+  
+  when(exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid && ((all_risk))){  //only br_mask?  all_risk === true.B
     printf(p"dispatch-mask-1-enter:brinfo_rob_idx=${exe_units.alu_units(0).io.brinfo.uop.rob_idx} ")
     printf(p"mispredict=${exe_units.alu_units(0).io.brinfo.mispredict} ")
+    printf(p" cycles=${idle_cycles.value} ") 
     printf("brinfo_debug_pc=0x%x ",exe_units.alu_units(0).io.brinfo.uop.debug_pc)
     printf(p"brinfo_mask=${exe_units.alu_units(0).io.brinfo.uop.br_mask}\n")
   }
 
-  when((exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid === true.B) && ((all_risk))){ //only br_mask?
+  //不安全的分支解析结果 保存在brinfosback寄存器组中
+  when((exe_units.alu_units(0).io.brinfo.valid && !rob.io.flush.valid) && ((all_risk)) ){ //only br_mask?
     val br_rob_idx = exe_units.alu_units(0).io.brinfo.uop.rob_idx
     brinfosback(br_rob_idx) := exe_units.alu_units(0).io.brinfo
     brinfosback(br_rob_idx).valid := false.B
-    //brinfosback(br_rob_idx).uop := rob.io.rob_uop(br_rob_idx)
     brinfosback(br_rob_idx).uop.comefrom_rob := 1.U
     brinfosback(br_rob_idx).uop.br_mask := rob.io.rob_uop(br_rob_idx).br_mask
-    brinfosback_valid(br_rob_idx) := true.B
+    /*brinfos(br_rob_idx + 1.U) := exe_units.alu_units(0).io.brinfo
+    brinfos(br_rob_idx + 1.U).valid := false.B
+    brinfos(br_rob_idx + 1.U).uop.comefrom_rob := 1.U
+    brinfos(br_rob_idx + 1.U).uop.br_mask := rob.io.rob_uop(br_rob_idx).br_mask*/
+    brinfosback_valid(br_rob_idx) := true.B //使分支不会立刻commit
     printf(p"brinfo_rob_idx=${br_rob_idx} ")
     printf(p"mispredict=${exe_units.alu_units(0).io.brinfo.mispredict} ")
     printf("brinfo_debug_pc=0x%x ",exe_units.alu_units(0).io.brinfo.uop.debug_pc)
     printf(p"brinfo_mask=${exe_units.alu_units(0).io.brinfo.uop.br_mask}\n")
   }
+   
   for(i <- 0 until 32){  //only br_mask?
   
     val prs1_risk1 = Mux(rob.io.rob_uop(i).lrs1_rtype === RT_FIX, risk_table(rob.io.rob_uop(i).prs1), Mux(rob.io.rob_uop(i).lrs1_rtype === RT_FLT, fp_risk_table(rob.io.rob_uop(i).prs1), false.B) )
     val prs2_risk1 = Mux(rob.io.rob_uop(i).lrs2_rtype === RT_FIX, risk_table(rob.io.rob_uop(i).prs2), Mux(rob.io.rob_uop(i).lrs2_rtype === RT_FLT, fp_risk_table(rob.io.rob_uop(i).prs2), false.B) )
     //val prs3_risk1 = Mux(rob.io.rob_uop(i).frs3_en, fp_risk_table(rob.io.rob_uop(i).prs3), false.B)
-
     val prs1_risk_st1 = Mux(rob.io.rob_uop(i).lrs1_rtype === RT_FIX, st_risk_table(rob.io.rob_uop(i).prs1), Mux(rob.io.rob_uop(i).lrs1_rtype === RT_FLT, st_fp_risk_table(rob.io.rob_uop(i).prs1), false.B) )
     val prs2_risk_st1 = Mux(rob.io.rob_uop(i).lrs2_rtype === RT_FIX, st_risk_table(rob.io.rob_uop(i).prs2), Mux(rob.io.rob_uop(i).lrs2_rtype === RT_FLT, st_fp_risk_table(rob.io.rob_uop(i).prs2), false.B) )
     //val prs3_risk_st1 = Mux(rob.io.rob_uop(i).frs3_en, st_fp_risk_table(rob.io.rob_uop(i).prs3), false.B)
-    
+    //分支是否变得安全
     val all_risk1 = prs1_risk1 || prs2_risk1 || prs1_risk_st1 || prs2_risk_st1
     val half_risk1 = prs1_risk1 || prs2_risk1
     
-  
-    when(rob.io.rob_val(i) && !rob.io.flush.valid && !rob.io.commit.rollback && !(all_risk1) && rob.io.rob_debug_pc(i) === brinfosback(i).uop.debug_pc && brinfosback(i).uop.comefrom_rob =/= 0.U && brinfosback_valid(i) === true.B){
-      brinfosback(i).uop.br_mask := rob.io.rob_uop(i).br_mask
-      brinfosback(i).uop.comefrom_rob := 0.U
-      brinfosback(i).valid := true.B
-      brinfosback_valid(i) := false.B
+    //危险分支变得安全
+    when(rob.io.rob_val(i) && !rob.io.flush.valid && RegNext(!rob.io.flush.valid) && RegNext(RegNext(!rob.io.flush.valid)) && !rob.io.commit.rollback && !(all_risk1) && rob.io.rob_debug_pc(i) === brinfosback(i).uop.debug_pc && brinfosback(i).uop.comefrom_rob =/= 0.U && brinfosback(i).uop.comefrom_rob1 === 0.U && brinfosback_valid(i) === true.B){
+    //when(rob.io.rob_val(i) && !rob.io.flush.valid && RegNext(!rob.io.flush.valid) && RegNext(RegNext(!rob.io.flush.valid)) && !rob.io.commit.rollback && !(all_risk1) && rob.io.rob_debug_pc(i) === brinfos(i+1).uop.debug_pc && brinfos(i+1).uop.comefrom_rob =/= 0.U && brinfos(i+1).uop.comefrom_rob1 === 0.U && brinfosback_valid(i) === true.B){
+      brinfosback(i).uop := rob.io.rob_uop(i)
+      brinfosback(i).uop.br_mask := rob.io.rob_uop(i).br_mask  //更新分支掩码
+      brinfosback(i).uop.comefrom_rob := 1.U
+      brinfosback(i).uop.comefrom_rob1 := 1.U  //使本when只进入一次
+      /*brinfos(i+1).uop := rob.io.rob_uop(i)
+      brinfos(i+1).uop.br_mask := rob.io.rob_uop(i).br_mask  //更新分支掩码
+      brinfos(i+1).uop.comefrom_rob := 1.U
+      brinfos(i+1).uop.comefrom_rob1 := 1.U  //使本when只进入一次*/
+      brinfosback(i).valid := !rob.io.flush.valid && RegNext(!rob.io.flush.valid) && !rob.io.commit.rollback && !(all_risk1)
+      //brinfos(i+1).valid := !rob.io.flush.valid && RegNext(!rob.io.flush.valid) && !rob.io.commit.rollback && !(all_risk1)
       printf(p"dispatch-mask-1-out:brinfo_rob_idx_remove=${i} ")
       printf(p"mispredict=${brinfosback(i).mispredict} ")
+      //printf(p"mispredict=${brinfos(i+1).mispredict} ")
+      printf(" rob.io.rob_debug_pc(i)=0x%x",rob.io.rob_debug_pc(i))
+      printf(p" cycles=${idle_cycles.value} ") 
+      printf(p" rollback=${rob.io.commit.rollback} ")
+      printf(p" brinfosback(i).valid=${brinfosback(i).valid} ")
+      //printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" flush=${rob.io.flush.valid} ") 
+      printf(p" regflush=${RegNext(rob.io.flush.valid)} ") 
+      printf(p" regregflush=${RegNext(RegNext(rob.io.flush.valid))} ") 
+      printf(p" regregregflush=${RegNext(RegNext(RegNext(rob.io.flush.valid)))} ") 
+      printf(p" !(all_risk1)=${!(all_risk1)} ") 
+      printf(p" reg!(all_risk1)=${RegNext(!(all_risk1))} ") 
+      printf(p" reg2!(all_risk1)=${RegNext(RegNext(!(all_risk1)))} ")
+      printf(p" reg3!(all_risk1)=${RegNext(RegNext(RegNext(!(all_risk1))))} ")
       printf(p"brinfo_mask0 =${rob.io.rob_mask(i)} ")
       printf(p"brinfo_mask1 =${brinfosback(i).uop.br_mask} ")
       printf("brinfo_debug_pc =0x%x\n",brinfosback(i).uop.debug_pc)
+      //printf(p"brinfo_mask1 =${brinfos(i+1).uop.br_mask} ")
+      //printf("brinfo_debug_pc =0x%x\n",brinfos(i+1).uop.debug_pc)
+    }
+    
+    //推迟分支commit
+    when(rob.io.rob_val(i) && !rob.io.flush.valid  && RegNext(!rob.io.flush.valid) && RegNext(RegNext(!rob.io.flush.valid)) && !rob.io.commit.rollback && !(all_risk1) && RegNext(!(all_risk1)) && RegNext(RegNext(!(all_risk1))) && RegNext(RegNext(RegNext(!(all_risk1)))) && RegNext(RegNext(RegNext(RegNext(!(all_risk1))))) && RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1))))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))))))  && rob.io.rob_debug_pc(i) === brinfosback(i).uop.debug_pc && brinfosback(i).uop.comefrom_rob =/= 0.U && brinfosback_valid(i) === true.B){
+    //when(rob.io.rob_val(i) && !rob.io.flush.valid  && RegNext(!rob.io.flush.valid) && RegNext(RegNext(!rob.io.flush.valid)) && !rob.io.commit.rollback && !(all_risk1) && RegNext(!(all_risk1)) && RegNext(RegNext(!(all_risk1))) && RegNext(RegNext(RegNext(!(all_risk1)))) && RegNext(RegNext(RegNext(RegNext(!(all_risk1))))) && RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1))))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))))) && RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(!(all_risk1)))))))))  && rob.io.rob_debug_pc(i) === brinfos(i+1).uop.debug_pc && brinfos(i+1).uop.comefrom_rob =/= 0.U && brinfosback_valid(i) === true.B){
+       brinfosback(i).uop.comefrom_rob := 0.U
+       brinfosback(i).uop.comefrom_rob1 := 1.U
+       //brinfos(i+1).uop.comefrom_rob := 0.U
+       //brinfos(i+1).uop.comefrom_rob1 := 1.U
+       brinfosback_valid(i) := false.B   //发出可以提交的信号
+       printf(p" cyclesss1 =${idle_cycles.value} \n") 
     }
 
-
-    when(!rob.io.rob_val(i)){
+    when(!rob.io.rob_val(i) || rob.io.flush.valid){
+      when(brinfosback(i).uop.debug_pc === 0x00043058L.U && brinfosback(i).mispredict === 1.U && brinfosback(i).uop.comefrom_rob1 === 1.U){
+      //when(brinfos(i+1).uop.debug_pc === 0x00043058L.U && brinfos(i+1).mispredict === 1.U && brinfos(i+1).uop.comefrom_rob1 === 1.U){
+          printf(p" cycles=${idle_cycles.value} ")
+          printf(p" 0x00043058L become unvalid\n ")
+      }
       brinfosback(i).uop.comefrom_rob := 0.U
+      brinfosback(i).uop.comefrom_rob1 := 0.U
       brinfosback(i).valid := false.B
-      brinfosback_valid(i) := false.B
+      brinfosback(i).mispredict := false.B
+     /* brinfos(i+1).uop.comefrom_rob := 0.U
+      brinfos(i+1).uop.comefrom_rob1 := 0.U
+      brinfos(i+1).valid := false.B
+      brinfos(i+1).mispredict := false.B*/
+      brinfosback_valid(i) := false.B   
+      
+      brinfos(i+1).valid := false.B   
     }
 
-    /*when(brinfosback(i).uop.debug_pc === 0x80001f402L.U){
-      printf(p"80001f40 i why not out rob_idx =${i} ")
+    when(brinfosback(i).uop.debug_pc === 0x00043058L.U && rob.io.rob_debug_pc(i) === brinfosback(i).uop.debug_pc ){ //&& brinfosback(i).mispredict === 1.U
+      printf(p"00043058 i why not out rob_idx =${i} ")
       printf(p"mispredict=${brinfosback(i).mispredict} ")
       printf(p"rob_val=${rob.io.rob_val(i)} ")
+      printf(p" cycles=${idle_cycles.value} ") 
+      printf(p" brinfosback(i).valid=${brinfosback(i).valid} ")
+      printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" flush=${rob.io.flush.valid} ")
+      printf(p" regflush=${RegNext(rob.io.flush.valid)} ")
+      printf(p"!rob.io.commit.rollback=${!rob.io.commit.rollback} ")    
+      printf(p" brinfosback(i).uop.comefrom_rob =/= 0.U=${brinfosback(i).uop.comefrom_rob =/= 0.U} ")
       printf(p"rob_mask =${rob.io.rob_mask(i)} ")
       printf(p"brinfo_mask =${brinfosback(i).uop.br_mask} ")
       printf(p"brinfosback_valid =${brinfosback_valid(i)} ")
-      printf(p"comefrom_rob=${brinfosback(i).uop.comefrom_rob} ")
+      printf(p" !(all_risk1)=${!(all_risk1)} ")
+      printf(p" reg!(all_risk1)=${RegNext(!(all_risk1))} ")
+      printf(p" reg2!(all_risk1)=${RegNext(RegNext(!(all_risk1)))} ")
+      printf(p" reg3!(all_risk1)=${RegNext(RegNext(RegNext(!(all_risk1))))} ")
+      /*printf(p"Reg =${RegNext(brinfosback_valid(i))} ")
+      printf(p"Reg2 =${RegNext(RegNext(brinfosback_valid(i)))} ")
+      printf(p"Reg3 =${RegNext(RegNext(RegNext(brinfosback_valid(i))))} ")
+      printf(p"Reg4 =${RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))} ")
+      printf(p"Reg5 =${RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))} ")
+      printf(p"Reg6 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))} ")
+      printf(p"Reg7 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))))} ")
+      printf(p"Reg8 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))))} ")*/
+      /*printf(p"comefrom_rob=${brinfosback(i).uop.comefrom_rob} ")
       printf(p"risk_table(rob.io.rob_uop(i).prs1) =${risk_table(rob.io.rob_uop(i).prs1)} ")
       printf(p"fp_risk_table(rob.io.rob_uop(i).prs1) =${fp_risk_table(rob.io.rob_uop(i).prs1)} ")
       printf(p"rob.io.rob_uop(i).prs1 =${rob.io.rob_uop(i).prs1} ")
@@ -319,9 +403,95 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       printf(p"prs1_risk1 =${prs1_risk1} ")
       printf(p"prs2_risk1 =${prs2_risk1} ")
       printf(p"prs1_risk_st1 =${prs1_risk_st1} ")
-      printf(p"prs2_risk_st1 =${prs2_risk_st1} ")
+      printf(p"prs2_risk_st1 =${prs2_risk_st1} ")*/
       printf("rob_debug_pc =0x%x ",rob.io.rob_debug_pc(i))
       printf("brinfo_debug_pc =0x%x\n",brinfosback(i).uop.debug_pc)
+    }
+    
+    /*when(brinfos(i+1).uop.debug_pc === 0x00043058L.U && rob.io.rob_debug_pc(i) === brinfos(i+1).uop.debug_pc ){ //&& brinfos(i+1).mispredict === 1.U
+      printf(p"00043058 i why not out rob_idx =${i} ")
+      printf(p"mispredict=${brinfos(i+1).mispredict} ")
+      printf(p"rob_val=${rob.io.rob_val(i)} ")
+      printf(p" cycles=${idle_cycles.value} ") 
+      printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" flush=${rob.io.flush.valid} ")
+      printf(p" regflush=${RegNext(rob.io.flush.valid)} ")
+      printf(p"!rob.io.commit.rollback=${!rob.io.commit.rollback} ")    
+      printf(p" brinfos(i+1).uop.comefrom_rob =/= 0.U=${brinfos(i+1).uop.comefrom_rob =/= 0.U} ")
+      printf(p"rob_mask =${rob.io.rob_mask(i)} ")
+      printf(p"brinfo_mask =${brinfos(i+1).uop.br_mask} ")
+      printf(p"brinfosback_valid =${brinfosback_valid(i)} ")
+      printf(p" !(all_risk1)=${!(all_risk1)} ")
+      printf(p" reg!(all_risk1)=${RegNext(!(all_risk1))} ")
+      printf(p" reg2!(all_risk1)=${RegNext(RegNext(!(all_risk1)))} ")
+      printf(p" reg3!(all_risk1)=${RegNext(RegNext(RegNext(!(all_risk1))))} ")
+      /*printf(p"Reg =${RegNext(brinfosback_valid(i))} ")
+      printf(p"Reg2 =${RegNext(RegNext(brinfosback_valid(i)))} ")
+      printf(p"Reg3 =${RegNext(RegNext(RegNext(brinfosback_valid(i))))} ")
+      printf(p"Reg4 =${RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))} ")
+      printf(p"Reg5 =${RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))} ")
+      printf(p"Reg6 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))} ")
+      printf(p"Reg7 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))))} ")
+      printf(p"Reg8 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))))} ")*/
+      /*printf(p"comefrom_rob=${brinfosback(i).uop.comefrom_rob} ")
+      printf(p"risk_table(rob.io.rob_uop(i).prs1) =${risk_table(rob.io.rob_uop(i).prs1)} ")
+      printf(p"fp_risk_table(rob.io.rob_uop(i).prs1) =${fp_risk_table(rob.io.rob_uop(i).prs1)} ")
+      printf(p"rob.io.rob_uop(i).prs1 =${rob.io.rob_uop(i).prs1} ")
+      printf(p"rob.io.rob_uop(i).lrs1_rtype =${rob.io.rob_uop(i).lrs1_rtype} ")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p"prs1_risk1 =${prs1_risk1} ")
+      printf(p"prs2_risk1 =${prs2_risk1} ")
+      printf(p"prs1_risk_st1 =${prs1_risk_st1} ")
+      printf(p"prs2_risk_st1 =${prs2_risk_st1} ")*/
+      printf("rob_debug_pc =0x%x ",rob.io.rob_debug_pc(i))
+      printf("brinfo_debug_pc =0x%x\n",brinfos(i+1).uop.debug_pc)
+    }
+       
+    when(brinfos(i+1).uop.debug_pc === 0x8000418eL.U){ //&& brinfos(i+1).mispredict === 1.U && rob.io.rob_debug_pc(i) === brinfos(i+1).uop.debug_pc
+      printf(p"8000418e i why not out rob_idx =${i} ")
+      printf(p"mispredict=${brinfos(i+1).mispredict} ")
+      printf(p"rob_val=${rob.io.rob_val(i)} ")
+      printf(p" cycles=${idle_cycles.value} ") 
+      printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" brinfos(i+1).valid=${brinfos(i+1).valid} ")
+      printf(p" flush=${rob.io.flush.valid} ")
+      printf(p" regflush=${RegNext(rob.io.flush.valid)} ")
+      printf(p" regregflush=${RegNext(RegNext(rob.io.flush.valid))} ")
+      printf(p"!rob.io.commit.rollback=${!rob.io.commit.rollback} ")
+      printf(p" !(all_risk1)=${!(all_risk1)} ")
+      printf(p" debug_pc=${rob.io.rob_debug_pc(i) === brinfos(i+1).uop.debug_pc} ")
+      printf(p" comefrom_rob=${brinfos(i+1).uop.comefrom_rob =/= 0.U} ")
+      printf(p" comefrom_rob1=${brinfos(i+1).uop.comefrom_rob1 === 0.U} ")
+      printf(p" brinfosback_valid=${brinfosback_valid(i) === true.B} ")
+      printf(p" brinfos(i+1).uop.comefrom_rob =/= 0.U=${brinfos(i+1).uop.comefrom_rob =/= 0.U} ")
+      printf(p"rob_mask =${rob.io.rob_mask(i)} ")
+      printf(p"brinfo_mask =${brinfos(i+1).uop.br_mask} ")
+      printf(p"brinfosback_valid =${brinfosback_valid(i)} ")
+      printf(p" !(all_risk1)=${!(all_risk1)} ")
+      printf(p" reg!(all_risk1)=${RegNext(!(all_risk1))} ")
+      printf(p" reg2!(all_risk1)=${RegNext(RegNext(!(all_risk1)))} ")
+      printf(p" reg3!(all_risk1)=${RegNext(RegNext(RegNext(!(all_risk1))))} ")
+      /*printf(p"Reg =${RegNext(brinfosback_valid(i))} ")
+      printf(p"Reg2 =${RegNext(RegNext(brinfosback_valid(i)))} ")
+      printf(p"Reg3 =${RegNext(RegNext(RegNext(brinfosback_valid(i))))} ")
+      printf(p"Reg4 =${RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))} ")
+      printf(p"Reg5 =${RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))} ")
+      printf(p"Reg6 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))} ")
+      printf(p"Reg7 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i))))))))} ")
+      printf(p"Reg8 =${RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(RegNext(brinfosback_valid(i)))))))))} ")*/
+      /*printf(p"comefrom_rob=${brinfosback(i).uop.comefrom_rob} ")
+      printf(p"risk_table(rob.io.rob_uop(i).prs1) =${risk_table(rob.io.rob_uop(i).prs1)} ")
+      printf(p"fp_risk_table(rob.io.rob_uop(i).prs1) =${fp_risk_table(rob.io.rob_uop(i).prs1)} ")
+      printf(p"rob.io.rob_uop(i).prs1 =${rob.io.rob_uop(i).prs1} ")
+      printf(p"rob.io.rob_uop(i).lrs1_rtype =${rob.io.rob_uop(i).lrs1_rtype} ")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p"prs1_risk1 =${prs1_risk1} ")
+      printf(p"prs2_risk1 =${prs2_risk1} ")
+      printf(p"prs1_risk_st1 =${prs1_risk_st1} ")
+      printf(p"prs2_risk_st1 =${prs2_risk_st1} ")*/
+      printf("rob_debug_pc =0x%x ",rob.io.rob_debug_pc(i))
+      printf("brinfo_debug_pc =0x%x\n",brinfos(i+1).uop.debug_pc)
     }*/
 
   }
@@ -330,6 +500,9 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     when(brinfosback(i).valid === true.B){
       brinfosback(i).valid := RegNext(false.B)
     }
+    /*when(brinfos(i+1).valid === true.B){
+      brinfos(i+1).valid := RegNext(RegNext(false.B))
+    }*/
   }
   
  
@@ -358,17 +531,25 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   b2.jalr_target := oldest_mispredict.jalr_target
   b2.target_offset := oldest_mispredict.target_offset
   
-  when(oldest_mispredict.valid){
-    //oldest_mispredict.uop.br_mask := rob.io.rob_mask(oldest_mispredict.uop.rob_idx)
+   when(oldest_mispredict.valid){
     printf(p"dispatch oldest_mispredict_mask=${rob.io.rob_mask(oldest_mispredict.uop.rob_idx)} ")
     printf(p" mask=${oldest_mispredict.uop.br_mask} ")
+    printf(p" cycles=${idle_cycles.value} ") 
+    printf(p" brinfosback(oldest_mispredict.uop.rob_idx).valid=${brinfosback(oldest_mispredict.uop.rob_idx).valid} ")
+    //printf(p" brinfos(oldest_mispredict.uop.rob_idx+1).valid=${brinfos(oldest_mispredict.uop.rob_idx+1.U).valid} ")
     printf(p" b2.jalr_target=${oldest_mispredict.jalr_target} ")
+    printf(p" rob_idx=${oldest_mispredict.uop.rob_idx} ")
     printf(p" jmp_unit.jalr_target=${jmp_unit.io.brinfo.jalr_target} ")
     printf(p" jmp_unit.jalr_target=${RegNext(jmp_unit.io.brinfo.jalr_target)} ")
     printf(p"oldest_mispredict_rob_idx =${oldest_mispredict.uop.rob_idx} ")
     printf(p"oldest_mispredict =${oldest_mispredict.mispredict} ")
-    printf("oldest_mispredict_debug_pc =0x%x\n",oldest_mispredict.uop.debug_pc)
-    when(oldest_mispredict.uop.debug_pc === 0x80001f40L.U){
+    printf(p"valid =${oldest_mispredict.valid} ")
+    printf(p"mispredict =${oldest_mispredict.mispredict} ")
+    printf(p" rollback=${rob.io.commit.rollback}")
+    printf(p" flush=${rob.io.flush.valid}")
+    printf(p" regflush=${RegNext(rob.io.flush.valid)}")
+    printf(" oldest_mispredict_debug_pc =0x%x\n",oldest_mispredict.uop.debug_pc)
+    when(oldest_mispredict.uop.debug_pc === 0x80002daeL.U){
         printf(p" brifo valid=${oldest_mispredict.valid} \n")   
         printf(p" brifo mispredict=${oldest_mispredict.mispredict} \n")   
         printf(p" brifo cfi_type=${oldest_mispredict.cfi_type} \n")   
@@ -378,11 +559,44 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         printf(p" brifo target_offset=${oldest_mispredict.target_offset} \n")     
         printf(p" uop=${oldest_mispredict.uop} \n")   
     }
+          printf(p"\n cycles=${idle_cycles.value} ") 
+          printf(p" brupdate.b1.mispredict_mask =/= 0.U=${brupdate.b1.mispredict_mask =/= 0.U} ")
+          printf(p" brupdate.b2.mispredict=${brupdate.b2.mispredict} ")
+          printf(" pc=0x%x",brupdate.b2.uop.debug_pc) 
+          printf(p" rollback=${rob.io.commit.rollback}")
+          printf(p" flush=${rob.io.flush.valid}")
+          printf(" rob_idx=%d\n",brupdate.b2.uop.rob_idx) 
+          for(i <- 0 until 33){
+              when(brinfos(i).valid && brinfos(i).mispredict){
+                  printf(p" cycles=${idle_cycles.value} ")
+                  printf(p" i=${i} ")
+                  printf(" pc=0x%x", brinfos(i).uop.debug_pc)
+                  printf(" rob_idx=%d\n", brinfos(i).uop.rob_idx)
+              }
+          }
   }
 
   val oldest_mispredict_ftq_idx = oldest_mispredict.uop.ftq_idx        //索引FTQ以找出我们的fetch PC。
 
    //在回滚期间不准有误预测
+   when( (brupdate.b1.mispredict_mask =/= 0.U || brupdate.b2.mispredict)
+    && rob.io.commit.rollback ){
+          printf(p" cycles=${idle_cycles.value} ") 
+          printf(p" brupdate.b1.mispredict_mask =/= 0.U=${brupdate.b1.mispredict_mask =/= 0.U} ")
+          printf(p" brupdate.b2.mispredict=${brupdate.b2.mispredict} ")
+          printf(" pc=0x%x",brupdate.b2.uop.debug_pc) 
+          printf(p" rollback=${rob.io.commit.rollback}")
+          printf(p" flush=${rob.io.flush.valid}")
+          printf(" rob_idx=%d\n",brupdate.b2.uop.rob_idx) 
+          for(i <- 0 until 33){
+              when(brinfos(i).valid && brinfos(i).mispredict){
+                  printf(p" cycles=${idle_cycles.value} ")
+                  printf(p" i=${i} ")
+                  printf(" pc=0x%x", brinfos(i).uop.debug_pc)
+                  printf(" rob_idx=%d\n", brinfos(i).uop.rob_idx)
+              }
+          }
+    }
   assert (!((brupdate.b1.mispredict_mask =/= 0.U || brupdate.b2.mispredict)
     && rob.io.commit.rollback), "Can't have a mispredict during rollback.")
 
@@ -613,11 +827,13 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       Mux(ftq_entry.start_bank === 1.U, 1.U << log2Ceil(bankBytes), 0.U))(log2Ceil(fetchWidth), 1)
                    //cfi索引  //pc_lobP：我们自己PC的低位。 与ftq [ftq_idx]结合使用可获得PC。
                    
-    when(brupdate.b2.uop.debug_pc === 0x80001f40L.U){
-        printf(p" flush mispredict_target=${mispredict_target} \n")   
-        printf(p" ftq_idx=${brupdate.b2.uop.ftq_idx} \n")   
-        printf(p" ftq_entry=${ftq_entry} \n")   
+    when(brupdate.b2.uop.debug_pc === 0x80004120L.U){
+        printf(p"mispredict mispredict_target=${mispredict_target} ")  
+        printf(p" cycles=${idle_cycles.value} ") 
+        printf(p" ftq_idx=${brupdate.b2.uop.ftq_idx} ")   
+        printf(p" ftq_entry=${ftq_entry} ")   
         printf(p" cfi_idx=${cfi_idx} \n")   
+        
     }
                    
     val ftq_ghist = io.ifu.get_pc(1).ghist
@@ -862,6 +1078,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     dis_uops(w).prs3_busy := f_uop.prs3_busy && dis_uops(w).frs3_en
     dis_uops(w).ppred_busy := p_uop.ppred_busy && dis_uops(w).is_sfb_shadow
     dis_uops(w).comefrom_rob := 0.U
+    dis_uops(w).comefrom_rob1 := 0.U
     dis_uops(w).risk1 := false.B
     dis_uops(w).risk2 := false.B
     dis_uops(w).riskstore_after_load := false.B
@@ -913,7 +1130,62 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //如果有已经发出的load且load-mask不为0，则暂停此处load(之后再考虑数据依赖)///////////////////////////////////////////////////////////////////////////////////////////////////
   for (w <- 0 until coreWidth) {
-  when(dis_uops(w).debug_pc === 0x80001b4cL.U && dis_valids(w)===1.U) {
+  when(dis_uops(w).debug_pc === 0x80002daeL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80002dae-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80002dacL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80002dac-dispatch \n")
+    }
+     when(dis_uops(w).debug_pc === 0x80004120L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004120-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004142L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004142-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000427cL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" prs1=${dis_uops(w).prs1} ")
+      printf(p" prs2=${dis_uops(w).prs2} ")
+      printf(p" prs3=${dis_uops(w).prs3} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000427c-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004244L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" prs1=${dis_uops(w).prs1} ")
+      printf(p" prs2=${dis_uops(w).prs2} ")
+      printf(p" prs3=${dis_uops(w).prs3} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004244-dispatch \n")
+    }
+  
+  /*when(dis_uops(w).debug_pc === 0x80001b4cL.U && dis_valids(w)===1.U) {
       printf(p" mask=${dis_uops(w).br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" pdst=${dis_uops(w).pdst} ")
@@ -2074,6 +2346,153 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       //printf(p" risk_table=${risk_table} ")
       printf(p" found-800011b0-dispatch \n")
     }
+    when(dis_uops(w).debug_pc === 0x80004244L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004244-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004248L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004248-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000424cL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000424c-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000427cL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" prs1=${dis_uops(w).prs1} ")
+      printf(p" prs2=${dis_uops(w).prs2} ")
+      printf(p" prs3=${dis_uops(w).prs3} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000427c-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000427eL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000427e-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004280L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      printf(p" found-80004280-dispatch \n")
+    }
+     when(dis_uops(w).debug_pc === 0x80004282L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      printf(p" found-80004282-dispatch \n")
+    }
+     when(dis_uops(w).debug_pc === 0x80004284L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      printf(p" found-80004284-dispatch \n")
+    }
+     when(dis_uops(w).debug_pc === 0x80004286L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004286-dispatch \n")
+    }
+     when(dis_uops(w).debug_pc === 0x8000428aL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000428a-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000428cL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000428a-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000428eL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000428e-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004292L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004292-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80004296L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80004296-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x8000429aL.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" rob_idx=${dis_uops(w).rob_idx} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-8000429a-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80002e84L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80002e84-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80002e86L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      printf(p" prs1=${dis_uops(w).prs1} ")
+      printf(p" prs2=${dis_uops(w).prs2} ")
+      printf(p" prs3=${dis_uops(w).prs3} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80002e86-dispatch \n")
+    }
+    when(dis_uops(w).debug_pc === 0x80002e88L.U && dis_valids(w)===1.U) {
+      printf(p" mask=${dis_uops(w).br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" pdst=${dis_uops(w).pdst} ")
+      //printf(p" risk_table=${risk_table} ")
+      printf(p" found-80002e88-dispatch \n")
+    }
     when(dis_uops(w).debug_pc === 0x80001f40L.U && dis_valids(w)===1.U) {
       printf(p" mask=${dis_uops(w).br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
@@ -2232,7 +2651,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
      // printf(p" risk_table=${risk_table} ")
       printf(p" found-8c-dispatch \n")
     }/*
-    */
+    */*/
   }
 
                //dispatch的故障
@@ -2272,25 +2691,10 @@ class BoomCore(implicit p: Parameters) extends BoomModule
 
   for (i <- 0 until coreWidth) {
 
-    when(dis_uops(i).debug_inst(15,0) === 0x97baL.U)
-    {
-      printf(p"pdst-1.0=${dis_uops(i).pdst} ")
-      printf(p"mask-1.0=${dis_uops(i).br_mask =/= 0.U} ")
-      printf(p"uses_ldq-1.0=${dis_uops(i).uses_ldq} ")
-      printf(p" risk_table(dis_uops(i).prs1)=${risk_table(dis_uops(i).prs1)} ")
-      printf(p" risk_table(dis_uops(i).prs2)=${risk_table(dis_uops(i).prs2)} ")
-      printf(p" risk_table(dis_uops(i).prs3)=${risk_table(dis_uops(i).prs3)} ")
-      printf(p" fp=${dis_uops(i).fp_val} ")
-      printf("inst= 0x%x \n", dis_uops(i).debug_inst)
-    }
-
     io.lsu.testissued := false.B
     when(dis_uops(i).debug_inst(31,0) === 0x00054783L.U){
        io.lsu.testissued := true.B
        //输出该微操作的dep_mask
-       printf(p"54783-core-ldq_idx=${dis_uops(i).ldq_idx} ")
-       printf(p"54783-core-ldq_valid=${io.lsu.ldq_valid(dis_uops(i).ldq_idx)} ")
-       printf(p"54783-core-dep_mask=${io.lsu.ldq_dep_mask(dis_uops(i).ldq_idx)} ")
     }
 
 
@@ -2307,11 +2711,11 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         } .elsewhen(dis_uops(i).dst_rtype === RT_FIX) {
           st_risk_table(dis_uops(i).pdst) := true.B
           dis_uops(i).risk2 := true.B
-          printf(p" wuran54783-pdst1=${dis_uops(i).pdst}")
+          /*printf(p" wuran54783-pdst1=${dis_uops(i).pdst}")
           printf(p" wuran54783-1 ")
           printf(p" ldq_idx=${dis_uops(i).ldq_idx} ")
           printf(p" cycles=${idle_cycles.value} ")
-          printf(p" wuran54783-risk-pdst1=${st_risk_table(dis_uops(i).pdst)}\n")
+          printf(p" wuran54783-risk-pdst1=${st_risk_table(dis_uops(i).pdst)}\n")*/
         }
         //dis_uops(i).risk := true.B
       }
@@ -2341,11 +2745,11 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         } .elsewhen(dis_uops(i).dst_rtype === RT_FIX) {
           risk_table(dis_uops(i).pdst) := true.B
           dis_uops(i).risk1 := true.B
-          printf(p" wuran54783-pdst2=${dis_uops(i).pdst}")
+         /* printf(p" wuran54783-pdst2=${dis_uops(i).pdst}")
           printf(" pc2=0x%x", dis_uops(i).debug_pc )
           printf(p" wuran54783-2 ")
           printf(p" cycles=${idle_cycles.value} ")
-          printf(p" wuran54783-risk-pdst2=${risk_table(dis_uops(i).pdst)}\n")
+          printf(p" wuran54783-risk-pdst2=${risk_table(dis_uops(i).pdst)}\n")*/
           //risk_table(dis_uops(i).pdst) := true.B
         }
         //dis_uops(i).risk := true.B
@@ -2360,11 +2764,11 @@ class BoomCore(implicit p: Parameters) extends BoomModule
           } .elsewhen(dis_uops(i).dst_rtype === RT_FIX) {
             risk_table(dis_uops(i).pdst) := true.B
             dis_uops(i).risk1 := true.B
-            printf(p" wuran54783-pdst3=${dis_uops(i).pdst}")
+            /*printf(p" wuran54783-pdst3=${dis_uops(i).pdst}")
             printf(" pc3=0x%x", dis_uops(i).debug_pc )
             printf(p" wuran54783-3 ")
             printf(p" cycles=${idle_cycles.value} ")
-            printf(p" wuran54783-risk-pdst3=${risk_table(dis_uops(i).pdst)}\n")
+            printf(p" wuran54783-risk-pdst3=${risk_table(dis_uops(i).pdst)}\n")*/
             //risk_table(dis_uops(i).pdst) := true.B
           }
         }
@@ -2374,11 +2778,11 @@ class BoomCore(implicit p: Parameters) extends BoomModule
 
     when(dis_uops(i).uses_ldq && !(prs1_wuran_mask || prs2_wuran_mask || prs3_wuran_mask) && !(prs1_wuran || prs2_wuran || prs3_wuran) && io.lsu.store_wuran) {
       //dis_uops(i).riskstore_after_load := true.B
-      printf(p" riskstore_after_load=${dis_uops(i).riskstore_after_load} ")
+      /*printf(p" riskstore_after_load=${dis_uops(i).riskstore_after_load} ")
       printf(" pc=0x%x\n", dis_uops(i).debug_pc )
       when(dis_uops(i).debug_pc === 0x800010e0L.U){
         printf(" right \n")
-      }
+      }*/
     }
 
   }
@@ -2386,11 +2790,11 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   for(i <- 0 until numIntPhysRegs) {
     when(rob.io.clear_risk_table(i) =/= 0.U) {
       risk_table(i) := false.B
-      printf("core clear pdst i=%d\n", i.U)
+      /*printf("core clear pdst i=%d\n", i.U)*/
     }
     when(rob.io.clear_st_risk_table(i) =/= 0.U) {
       st_risk_table(i) := false.B
-      printf("core clear st pdst i=%d\n", i.U)
+      /*printf("core clear st pdst i=%d\n", i.U)*/
     }
   }
   for(i <- numIntPhysRegs until numIntPhysRegs+numFpPhysRegs) {
@@ -2421,7 +2825,9 @@ class BoomCore(implicit p: Parameters) extends BoomModule
    }*/
 
   when(rob.io.flush.valid){
-    printf(p" flush \n")
+    printf(p" cycles=${idle_cycles.value} ")
+    printf(p" regflush1=${RegNext(rob.io.flush.valid)} ")
+    printf(p" flush1 \n")
     for(i <- 0 until numIntPhysRegs){
       risk_table(i) := false.B
       st_risk_table(i) := false.B
@@ -2870,13 +3276,13 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     issport.bits.risk_rob_idx := wakeup.bits.uop.rob_idx
     //issport.bits.risk := wakeup.bits.uop.risk
     when(wakeup.bits.uop.debug_pc === 0x80001310L.U && wakeup.valid){
-      printf(p" \n0x80001310L wakeup")
+      /*printf(p" \n0x80001310L wakeup")
       printf(p" mask=${wakeup.bits.uop.br_mask}")
       printf(p" fp_val=${wakeup.bits.uop.fp_val}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" pdst=${wakeup.bits.uop.pdst}")
       printf(p" rob_idx=${wakeup.bits.uop.rob_idx}")
-      printf(p" come from rob =${wakeup.bits.uop.comefrom_rob}\n")
+      printf(p" come from rob =${wakeup.bits.uop.comefrom_rob}\n")*/
     }
     /* .otherwise{*/
     //issport.bits.risk := Mux(wakeup.bits.uop.comefrom_rob, false.B, Mux(wakeup.bits.uop.dst_rtype === RT_FLT, fp_risk_table(wakeup.bits.uop.pdst) || st_fp_risk_table(wakeup.bits.uop.pdst), Mux(wakeup.bits.uop.dst_rtype === RT_FIX, risk_table(wakeup.bits.uop.pdst) || st_risk_table(wakeup.bits.uop.pdst),false.B) ))
@@ -2941,7 +3347,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   io.lsu.issued92 := false.B
   for (w <- 0 until exe_units.numIrfReaders) {
 
-    when(iss_uops(w).debug_inst === 0x00f57c63L.U && iss_valids(w)===1.U) {
+    /*when(iss_uops(w).debug_inst === 0x00f57c63L.U && iss_valids(w)===1.U) {
       printf(p" mask=${iss_uops(w).br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-76-issued \n")
@@ -3001,6 +3407,54 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       printf(" inst=0x%x", iss_uops(w).debug_pc)
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-80001310-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x80004244L.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-80004244-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x8000427cL.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-8000427c-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x8000427eL.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-8000427e-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x80002e84L.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-80002e84-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x80002e86L.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-80002e86-issued \n")
+    }
+    when(iss_uops(w).debug_pc === 0x80002e88L.U && iss_valids(w)===1.U) {
+      printf(p" mask=${iss_uops(w).br_mask}")
+      printf(p" rob_idx=${iss_uops(w).rob_idx}")
+      printf(p" pdst=${iss_uops(w).pdst}")
+      printf(" inst=0x%x", iss_uops(w).debug_pc)
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-80002e88-issued \n")
     }
     when(iss_uops(w).debug_pc === 0x80001314L.U && iss_valids(w)===1.U) {
       printf(p" mask=${iss_uops(w).br_mask}")
@@ -3079,7 +3533,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       printf(p" mask=${iss_uops(w).br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-631c-issued \n")
-    }*/
+    }*/*/
   }
 
   //-------------------------------------------------------------
@@ -3263,8 +3717,8 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       val wbdata = wbresp.bits.data       //写回数据
       
       when(wbresp.bits.uop.debug_pc === 0x80001030L.U && wbresp.valid){
-          printf(p"rob_idx = ${wbresp.bits.uop.rob_idx} ")
-          printf("pc = 0x%x \n",wbresp.bits.uop.debug_pc)
+          /*printf(p"rob_idx = ${wbresp.bits.uop.rob_idx} ")
+          printf("pc = 0x%x \n",wbresp.bits.uop.debug_pc)*/
       }
 
       def wbIsValid(rtype: UInt) =
@@ -3329,7 +3783,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
   //-------------------------------------------------------------
 
   for (w <- 0 until 1) {
-    when(ll_wbarb.io.out.bits.uop.debug_inst === 0xfe0709a3L.U) {
+   /* when(ll_wbarb.io.out.bits.uop.debug_inst === 0xfe0709a3L.U) {
       printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-fe0709a3-exed1 \n")
@@ -3338,6 +3792,16 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-80001d7a-exed1 \n")
+    }
+     when(ll_wbarb.io.out.bits.uop.debug_pc === 0x80004244L.U) {
+      printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-80004244-exed1 \n")
+    } 
+    when(ll_wbarb.io.out.bits.uop.debug_pc === 0x8000427cL.U) {
+      printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
+      printf(p" cycles=${idle_cycles.value} ")
+      printf(p" found-8000427c-exed1 \n")
     }
     when(ll_wbarb.io.out.bits.uop.debug_pc === 0x80001310L.U) {
       printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
@@ -3410,10 +3874,10 @@ class BoomCore(implicit p: Parameters) extends BoomModule
       printf(p" mask=${ll_wbarb.io.out.bits.uop.br_mask}")
       printf(p" cycles=${idle_cycles.value} ")
       printf(p" found-631c-exed1 \n")
-    }*/
+    }*/*/
   }
   for (i <- 1 until memWidth) {
-    when(mem_resps(i).bits.uop.debug_inst === 0xfe0709a3L.U) {
+    /*when(mem_resps(i).bits.uop.debug_inst === 0xfe0709a3L.U) {
       printf(p" found-fe0709a3-exed2 \n")
     }
     when(mem_resps(i).bits.uop.debug_pc === 0x80001d7aL.U) {
@@ -3442,13 +3906,13 @@ class BoomCore(implicit p: Parameters) extends BoomModule
     }
     /*when(mem_resps(i).bits.uop.debug_inst === 0x9af70b23L.U) {
       printf(p" found-aa-exed2 \n")
-    }*/
+    }*/*/
   }
   io.lsu.exed76 := false.B
   for (eu <- exe_units) {
     if (eu.writesIrf) {
       val resp = eu.io.iresp
-      when(resp.bits.uop.debug_inst === 0xfe0709a3L.U) {
+     /* when(resp.bits.uop.debug_inst === 0xfe0709a3L.U) {
         printf(p" mask=${resp.bits.uop.br_mask}")
         printf(p" cycles=${idle_cycles.value} ")
         printf(p" found-fe0709a3-exed3 \n")
@@ -3475,6 +3939,16 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         printf(p" mask=${resp.bits.uop.br_mask}")
         printf(p" cycles=${idle_cycles.value} ")
         printf(p" found-80001d7a-exed3 \n")
+      }
+       when(resp.bits.uop.debug_pc === 0x80004244L.U) {
+        printf(p" mask=${resp.bits.uop.br_mask}")
+        printf(p" cycles=${idle_cycles.value} ")
+        printf(p" found-80004244-exed3 \n")
+      }
+       when(resp.bits.uop.debug_pc === 0x8000427cL.U) {
+        printf(p" mask=${resp.bits.uop.br_mask}")
+        printf(p" cycles=${idle_cycles.value} ")
+        printf(p" found-8000427c-exed3 \n")
       }
       when(resp.bits.uop.debug_inst === 0x02f57663L.U) {
         printf(p" mask=${resp.bits.uop.br_mask}")
@@ -3531,7 +4005,7 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         printf(p" mask=${resp.bits.uop.br_mask}")
         printf(p" cycles=${idle_cycles.value} ")
         printf(p" found-main-ret-exed3 \n")
-      }*/
+      }*/*/
     }
   }
 
@@ -3691,10 +4165,12 @@ class BoomCore(implicit p: Parameters) extends BoomModule
         when (uop.is_rvc) {
           printf(p" cycles=${idle_cycles.value} ")
           printf(p" rob_idx=${uop.rob_idx} ")
+          printf(p" uses_stq=${uop.uses_stq} ")
           printf("(0x%x)", uop.debug_inst(15,0))
         } .otherwise {
           printf(p" cycles=${idle_cycles.value} ")
           printf(p" rob_idx=${uop.rob_idx} ")
+          printf(p" uses_stq=${uop.uses_stq} ")
           printf("(0x%x)", uop.debug_inst)
         }
       }
@@ -3708,17 +4184,23 @@ class BoomCore(implicit p: Parameters) extends BoomModule
 
         //分为commit的微操作是整数还是浮点类型，打印出他们的逻辑目的寄存器（ldst），以及debug_wdata（写回的写数据）
         when (rob.io.commit.uops(w).dst_rtype === RT_FIX && rob.io.commit.uops(w).ldst =/= 0.U) {
-          printf(" x%d 0x%x ldq_idx=%d\n",
+          printf(" x%d 0x%x use_ldq=%d ldq_idx=%d\n",
             rob.io.commit.uops(w).pdst,
             rob.io.commit.debug_wdata(w),
-            rob.io.commit.uops(w).ldq_idx)
+            rob.io.commit.uops(w).uses_ldq,
+            rob.io.commit.uops(w).ldq_idx
+            )
 
             
         } .elsewhen (rob.io.commit.uops(w).dst_rtype === RT_FLT) {
-          printf(" f%d 0x%x ldq_idx=%d\n",
+          printf(" f%d 0x%x use_ldq=%d ldq_idx=%d\n",
             rob.io.commit.uops(w).pdst,
             rob.io.commit.debug_wdata(w),
-          rob.io.commit.uops(w).ldq_idx)
+            rob.io.commit.uops(w).uses_ldq,
+            rob.io.commit.uops(w).ldq_idx
+            )
+          
+          
 
 
 

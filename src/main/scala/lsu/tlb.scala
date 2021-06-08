@@ -270,11 +270,11 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
 
   val tlb_hit = widthMap(w => real_hits(w).orR)
   val tlb_miss = widthMap(w => (vm_enabled(w) && !bad_va(w) && !tlb_hit(w)) )
-  when(tlb_miss(0)){
-    printf(p"tlb miss\n")
-    printf(p"io.store_risk(0)=${io.store_risk(0)}\n")
+  /*when(tlb_miss(0)){
+    printf(p"tlb miss")
+    printf(p"io.store_risk(0)=${io.store_risk(0)}")
     printf(p"io.load_risk(0)=${io.load_risk(0)}\n")
-  }
+  }*/
 
   val sectored_plru = new PseudoLRU(sectored_entries.size)
   val superpage_plru = new PseudoLRU(superpage_entries.size)
@@ -326,7 +326,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
         r_sectored_repl_addr  := replacementEntry(sectored_entries, sectored_plru.replace)
         r_sectored_hit_addr   := OHToUInt(sector_hits(w))
         r_sectored_hit        := sector_hits(w).orR
-        printf(p"tlb replace happen\n")
+        //printf(p"tlb replace happen\n")
       }
     }
     when (state === s_request) {

@@ -153,6 +153,15 @@ class RobIo(
   
   val comefrom_rob = Input(Vec(numRobRows,UInt(32.W)))
   val brinfosback_valid = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid1 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid2 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid3 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid4 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid5 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid6 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid7 = Input(Vec(numRobRows,Bool()))
+  val brinfosback_valid8 = Input(Vec(numRobRows,Bool()))
+  val mispredict = Input(Vec(numRobRows,Bool()))
 }
 
 /**
@@ -364,17 +373,21 @@ class Rob(
 
 
 
-
+  val rob_val       = RegInit(VecInit(Seq.fill(numRobRows){false.B}))   //rob条目输入有效吗？
+  val rob_bsy       = Reg(Vec(numRobRows, Bool()))                      //入口忙吗？
+  val rob_uop       = Reg(Vec(numRobRows, new MicroOp()))
   for (w <- 0 until coreWidth) {
     def MatchBank(bank_idx: UInt): Bool = (bank_idx === w.U)
 
     // one bank    //一个bank具有的标识
-    val rob_val       = RegInit(VecInit(Seq.fill(numRobRows){false.B}))   //rob条目输入有效吗？
-    val rob_bsy       = Reg(Vec(numRobRows, Bool()))                      //入口忙吗？
+    
     val rob_unsafe    = Reg(Vec(numRobRows, Bool()))                      //rob_unsafe为这条指令是否“安全”，即肯定能被提交，与下文提到的PNR有关
-    val rob_uop       = Reg(Vec(numRobRows, new MicroOp()))
+    
     val rob_exception = Reg(Vec(numRobRows, Bool()))                      //是异常吗？
     val rob_predicated = Reg(Vec(numRobRows, Bool())) // Was this instruction predicated out?   //该指令是否已确定？
+    val rob_predicated1 = Reg(Vec(numRobRows, Bool())) // Was this instruction predicated out?   //该指令是否已确定？
+    val wb_valid = Reg(Vec(numRobRows, Bool())) // Was this instruction predicated out?   //该指令是否已确定？
+    val wb_robidx = Reg(Vec(numRobRows, UInt(log2Ceil(numRobRows).W))) // Was this instruction predicated out?   //该指令是否已确定？
     val rob_fflags    = Mem(numRobRows, Bits(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W))
 
     val rob_debug_wdata = Mem(numRobRows, UInt(xLen.W))
@@ -393,9 +406,16 @@ class Rob(
       rob_uop(rob_tail)       := io.enq_uops(w)
       rob_exception(rob_tail) := io.enq_uops(w).exception
       rob_predicated(rob_tail)   := false.B
+      rob_predicated1(rob_tail)   := false.B
+      wb_valid(rob_tail)   := false.B
+      wb_robidx(rob_tail)   := rob_tail
       rob_fflags(rob_tail)    := 0.U
 
       //覆盖有效条目
+      when(!(rob_val(rob_tail) === false.B)){
+          printf(p" cycles=${io.idle_cycles} ")
+          printf(" overwriting a valid entry=0x%x \n", rob_uop(rob_tail).debug_pc)
+      }
       assert (rob_val(rob_tail) === false.B, "[rob] overwriting a valid entry.")
       assert ((io.enq_uops(w).rob_idx >> log2Ceil(coreWidth)) === rob_tail)
     } .elsewhen (io.enq_valids.reduce(_|_) && !rob_val(rob_tail)) {
@@ -469,14 +489,11 @@ class Rob(
         val index_pdst = Mux(rob_uop(i).dst_rtype === RT_FLT,rob_uop(i).pdst + numIntPhysRegs.U,rob_uop(i).pdst)
         clear_risk_table(index_pdst) := 1.U
         //when(rob_uop(i).debug_pc === 0x80001f40L.U){
-            printf("clear risk: pc=0x%x ", rob_uop(i).debug_pc)
+            /*printf("clear risk: pc=0x%x ", rob_uop(i).debug_pc)
             printf(p" pdst_clear=${rob_uop(i).pdst} ")
-            printf(p" before:risk1=${rob_uop(i).risk1} ")
+            printf(p" before:risk1=${rob_uop(i).risk1} \n")*/
         //}
         rob_uop(i).risk1 := false.B
-        when(rob_uop(i).debug_pc === 0x80001f40L.U){
-            printf(p" after:risk1=${rob_uop(i).risk1} \n")
-        }
         //rob_uop(i).risk := false.B
         /*printf(p" start mask=${rob_uop(i).br_mask} ")
         printf(" inst=0x%x ", rob_uop(i).debug_inst)
@@ -617,11 +634,30 @@ class Rob(
 
       //当第一个推测性load到来，记录该load的唤醒pdst，以及该load在rob中的行
 
-      when (wb_resp.valid && MatchBank(GetBankIdx(wb_uop.rob_idx))) {  //wb返回值有效并且bank匹配
+      when (wb_resp.valid && MatchBank(GetBankIdx(wb_uop.rob_idx)) && !io.brinfosback_valid(wb_uop.rob_idx)) {  //wb返回值有效并且bank匹配
         rob_bsy(row_idx)      := false.B            //rob标记为不忙
         rob_unsafe(row_idx)   := false.B            //rob标记为安全
         rob_predicated(row_idx)  := wb_resp.bits.predicated       //是否断定？ rob标记为断定
+        when(wb_uop.debug_pc === 0x80004244L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" rob_unsafe=${rob_unsafe} \n")
+        }
       }
+      
+      when (wb_resp.valid && MatchBank(GetBankIdx(wb_uop.rob_idx)) && io.brinfosback_valid(wb_uop.rob_idx)) {  //wb返回值有效并且bank匹配
+        //rob_bsy(row_idx)      := false.B            //rob标记为不忙
+        //rob_unsafe(row_idx)   := false.B            //rob标记为安全
+        rob_predicated1(row_idx)  := wb_resp.bits.predicated       //是否断定？ rob标记为断定
+        wb_valid(row_idx)  := wb_resp.valid      //是否断定？ rob标记为断定
+        wb_robidx(row_idx)  := wb_uop.rob_idx     //是否断定？ rob标记为断定
+        when(wb_uop.debug_pc === 0x80004244L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" rob_unsafe1=${rob_unsafe} \n")
+        }
+      }
+      
+    
+      
       // TODO check that fflags aren't overwritten
       // TODO check that the wb is to a valid ROB entry, give it a time stamp
 //        assert (!(wb_resp.valid && MatchBank(GetBankIdx(wb_uop.rob_idx)) &&
@@ -629,6 +665,21 @@ class Rob(
 //                  rob_exc_cause(row_idx) =/= 0.U),
 //                  "FP instruction writing back exc bits is overriding an existing exception.")
     }
+    
+    for(i <- 0 until 32){
+     when(wb_valid(i) && MatchBank(GetBankIdx(wb_robidx(i))) && !io.brinfosback_valid(i)){
+         rob_bsy(i)      := false.B            //rob标记为不忙
+         rob_unsafe(i)   := false.B            //rob标记为安全
+         rob_predicated(i)  := rob_predicated1(i)       //是否断定？ rob标记为断定
+         when(rob_uop(i).debug_pc === 0x80004244L.U){
+             printf(p" cycles=${io.idle_cycles} ")
+             printf(p" rob_unsafe2=${rob_unsafe} \n")
+         }
+         rob_predicated1(i)   := false.B
+         wb_valid(i)   := false.B
+         wb_robidx(i)   := i.U
+     }
+   }
 
     // Stores have a separate method to clear busy bits       store有一个单独的方法来清除繁忙的位、清除不安全的位
     for (clr_rob_idx <- io.lsu_clr_bsy) {
@@ -646,6 +697,7 @@ class Rob(
         rob_unsafe(cidx) := false.B
       }
     }
+    
 
 
     //-----------------------------------------------
@@ -682,31 +734,103 @@ class Rob(
       }
     }
     can_throw_exception(w) := rob_val(rob_head) && rob_exception(rob_head)   //rob head是异常时才抛出
+    
+    /*when(rob_val(rob_head) && rob_exception(rob_head) && rob_uop(rob_head).debug_pc === 0x80002e84L.U){
+         printf(" 0x80002e84L can_throw_exception debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" rob_val(rob_head)=%d",rob_val(rob_head))
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
+    }
+    
+    when(rob_val(rob_head) && rob_exception(rob_head) && rob_uop(rob_head).debug_pc === 0x80004244L.U){
+         printf(" 0x80004244L can_throw_exception debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" rob_val(rob_head)=%d",rob_val(rob_head))
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
+    }
+    
+    when(rob_val(rob_head) && rob_exception(rob_head) && rob_uop(rob_head).debug_pc === 0x8000428eL.U){
+         printf(" 0x8000428eL can_throw_exception debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" rob_val(rob_head)=%d",rob_val(rob_head))
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
+    }
+    
+    when(rob_val(rob_head) && rob_exception(rob_head) && rob_uop(rob_head).debug_pc === 0x80004248L.U){
+         printf(" 0x80004248L can_throw_exception debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" rob_val(rob_head)=%d",rob_val(rob_head))
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
+    }*/
 
     //-----------------------------------------------
     // Commit or Rollback   提交或回滚
 
     // Can this instruction commit? (the check for exceptions/rob_state happens later).
     // 此指令能提交吗?(稍后检查 异常/rob_state)。
-    when(rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && !io.brinfosback_valid(rob_head) && rob_uop(rob_head).debug_pc === 0x80001f40L.U){
-         printf(" can_commit0 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
-         printf(" can_commit0 pdst=%d \n",rob_uop(rob_head).pdst)
-         printf(" can_commit0 risk1=%d \n",rob_uop(rob_head).risk1)
-         printf(" can_commit0 risk2=%d \n",rob_uop(rob_head).risk2)
+    /*when(rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && (!io.brinfosback_valid1(rob_head)) && (!io.brinfosback_valid2(rob_head)) && (!io.brinfosback_valid3(rob_head)) && (!io.brinfosback_valid4(rob_head)) && (!io.brinfosback_valid5(rob_head)) && (!io.brinfosback_valid6(rob_head)) && (!io.brinfosback_valid7(rob_head) && (!io.brinfosback_valid8(rob_head)) )
+     && (!io.brinfosback_valid(rob_head)) && rob_uop(rob_head).debug_pc === 0x80002e84L.U){
+         printf(" 0x80002e84L can_commit0 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" rob_val(rob_head)=%d",rob_val(rob_head))
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(p" !io.brinfosback_valid(rob_head)=${!io.brinfosback_valid(rob_head)} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
     }
+     when(rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && (!io.brinfosback_valid1(rob_head)) && (!io.brinfosback_valid2(rob_head)) && (!io.brinfosback_valid3(rob_head)) && (!io.brinfosback_valid4(rob_head)) && (!io.brinfosback_valid5(rob_head)) && (!io.brinfosback_valid6(rob_head)) && (!io.brinfosback_valid7(rob_head) && (!io.brinfosback_valid8(rob_head)))
+     && (!io.brinfosback_valid(rob_head)) && rob_uop(rob_head).debug_pc === 0x80004244L.U){
+         printf(p" cycles=${io.idle_cycles} ")
+         printf(" 0x80004244L can_commit0 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(p" !io.brinfosback_valid(rob_head)=${!io.brinfosback_valid(rob_head)} ")
+         printf(p" Reg=${(RegNext(!io.brinfosback_valid(rob_head)))} ")
+         printf(p" RegReg=${(RegNext(RegNext(!io.brinfosback_valid(rob_head))))} ")
+         printf(p" RegRegReg=${(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))} ")
+         printf(p" RegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head))))))} ")
+         printf(p" RegRegRegRegReg=${(RegNext(RegNext(RegNext(RegNext(RegNext(!io.brinfosback_valid(rob_head)))))))} ")
+         printf(" !(rob_bsy(rob_head))=%d\n",!(rob_bsy(rob_head)))
+    }*/
      when(rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && !io.brinfosback_valid(rob_head) && rob_uop(rob_head).risk1 ){
-         printf(" can_commit1 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
-         printf(" can_commit1 pdst=%d \n",rob_uop(rob_head).pdst)
+         /*printf(" can_commit1 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" can_commit1 pdst=%d \n",rob_uop(rob_head).pdst)*/
          val commit_pdst = Mux(rob_uop(rob_head).dst_rtype === RT_FLT, rob_uop(rob_head).pdst + numIntPhysRegs.U, Mux(rob_uop(rob_head).dst_rtype === RT_FIX, rob_uop(rob_head).pdst, 0.U) )
          clear_risk_table(commit_pdst) := Mux(commit_pdst =/= 0.U, 1.U, 0.U)
      }
      when(rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && !io.brinfosback_valid(rob_head) && rob_uop(rob_head).risk2 ){
-         printf(" can_commit2 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
-         printf(" can_commit2 pdst=%d \n",rob_uop(rob_head).pdst)
+         /*printf(" can_commit2 debug_pc=0x%x ",rob_uop(rob_head).debug_pc)
+         printf(" can_commit2 pdst=%d \n",rob_uop(rob_head).pdst)*/
          val commit_pdst = Mux(rob_uop(rob_head).dst_rtype === RT_FLT, rob_uop(rob_head).pdst + numIntPhysRegs.U, Mux(rob_uop(rob_head).dst_rtype === RT_FIX, rob_uop(rob_head).pdst, 0.U) )
          clear_st_risk_table(commit_pdst) := Mux(commit_pdst =/= 0.U, 1.U, 0.U)
      }
+     
+    
+     
      can_commit(w) := rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && !io.brinfosback_valid(rob_head)
+     
+     
      
     
     //can_commit(w) := rob_val(rob_head) && !(rob_bsy(rob_head)) && !io.csr_stall && !io.brinfosback_valid(rob_head) && !rob_uop(rob_head).risk1 && !rob_uop(rob_head).risk2 //可以提交： rob head有效、rob head不在busy、没有csr.stall
@@ -746,6 +870,9 @@ class Rob(
       rob_exception(com_idx) := false.B
       rob_uop(com_idx).risk1 := 0.U
       rob_uop(com_idx).risk2 := 0.U
+      rob_predicated1(com_idx)   := false.B
+      wb_valid(com_idx)   := false.B
+      wb_robidx(com_idx)   := com_idx
     }
 
     if (enableCommitMapTable) {
@@ -756,6 +883,9 @@ class Rob(
           rob_uop(i).debug_inst := BUBBLE
           rob_uop(i).risk1 := 0.U
           rob_uop(i).risk2 := 0.U
+          rob_predicated1(i)   := false.B
+          wb_valid(i)   := false.B
+          wb_robidx(i)   := i.U
         }
       }
     }
@@ -771,12 +901,10 @@ class Rob(
         rob_val(i) := false.B
         rob_uop(i).risk1 := 0.U
         rob_uop(i).risk2 := 0.U
-        when(rob_uop(com_idx).debug_pc === 0x800011b0L.U){
-            printf("800011b0:(3) pc=0x%x ", rob_uop(i).debug_pc)
-            printf(p" pdst_clear=${rob_uop(i).pdst} ")
-            printf(p" before:risk1=${rob_uop(i).risk1} ")
-        }
         rob_uop(i.U).debug_inst := BUBBLE
+        rob_predicated1(i)   := false.B
+        wb_valid(i)   := false.B
+        wb_robidx(i)   := i.U
       } .elsewhen (rob_val(i)) {
         // clear speculation bit even on correct speculation   即使正确的猜测也清除推测位
         rob_uop(i).br_mask := GetNewBrMask(io.brupdate, br_mask)
@@ -794,9 +922,51 @@ class Rob(
 
     // -----------------------------------------------
     // Commit           提交
+    
+        
+   /* finished_committing_row =
+    (io.commit.valids.asUInt =/= 0.U) &&
+    ((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U) &&
+    !(r_partial_row && rob_head === rob_tail && !maybe_full)*/
+    
     when (will_commit(w)) {
       rob_val(rob_head) := false.B
+      /*when(rob_uop(rob_head).debug_pc === 0x80002e84L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" 11=${finished_committing_row} ")
+            printf(p" 22=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" 33=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" 44=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf("80002e84:will_commit pc=0x%x \n", rob_uop(rob_head).debug_pc)
+       }
+       when(rob_uop(rob_head).debug_pc === 0x80004244L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" 11=${finished_committing_row} ")
+            printf(p" 22=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" 33=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" 44=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf("80004244:will_commit pc=0x%x \n", rob_uop(rob_head).debug_pc)
+       }*/
     }
+    /*when(io.commit.valids(w)){
+      when(rob_uop(rob_head).debug_pc === 0x80002e84L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" 11=${finished_committing_row} ")
+            printf(p" 22=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" 33=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" 44=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf("80002e84:io.commit.valids(w) pc=0x%x \n", rob_uop(rob_head).debug_pc)
+       }
+       when(rob_uop(rob_head).debug_pc === 0x80004244L.U){
+            printf(p" cycles=${io.idle_cycles} ")
+            printf(p" 11=${finished_committing_row} ")
+            printf(p" 22=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" 33=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" 44=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf("80004244:io.commit.valids(w) pc=0x%x \n", rob_uop(rob_head).debug_pc)
+       }
+    }*/
+
 
     // -----------------------------------------------
     // Outputs          输出
@@ -880,7 +1050,7 @@ class Rob(
   for (w <- 0 until coreWidth) {
     will_throw_exception = (can_throw_exception(w) && !block_commit && !block_xcpt) || will_throw_exception               //将抛出异常
 
-    will_commit(w)       := can_commit(w) && !can_throw_exception(w) && !block_commit                      //将提交
+    will_commit(w)       := can_commit(w) && !can_throw_exception(w) && !block_commit          //将提交
     block_commit         = (rob_head_vals(w) &&
                            (!can_commit(w) || can_throw_exception(w))) || block_commit                     //阻塞提交
     block_xcpt           = will_commit(w)                                                                  //阻塞异常
@@ -926,7 +1096,8 @@ class Rob(
                                                 exception_thrown && !is_mini_exception,
                                                 flush_commit && flush_uop.uopc === uopERET,
                                                 refetch_inst)
-  when(flush_val){
+  when(io.flush.valid){
+      printf(p" cycles=${io.idle_cycles} ")
       printf("pc : =0x%x ", flush_uop.debug_pc)
       printf(p"flush : uop=${flush_uop} \n")
       printf(p"exception_thrown : =${exception_thrown} \n")
@@ -1101,6 +1272,7 @@ class Rob(
       //  ROB.
       //对我们来说，不幸的是，即使在没有异常的情况下，ROB也不会以单调递增的顺序使用它的条目。当部分行进入队列并提交，ROB为空时，就会出现边缘情况。
       rob_pnr     := rob_head
+      printf(p"robb")
       rob_pnr_lsb := PriorityEncoder(io.enq_valids)
     } .elsewhen (safe_to_inc && do_inc_row) {  //rob状态可以安全递增pnr && 可以做pnr增加
       rob_pnr     := WrapInc(rob_pnr, numRobRows)
@@ -1118,6 +1290,20 @@ class Rob(
 
   // Head overrunning PNR likely means an entry hasn't been marked as safe when it should have been.
   //头部超过PNR可能意味着入口没有被标记为安全，而它应该是安全的。
+  when(!(!IsOlder(rob_pnr_idx, rob_head_idx, rob_tail_idx) || rob_pnr_idx === rob_tail_idx)){
+      printf(p" cycles=${io.idle_cycles} ")
+      printf(p" rob_pnr_idx=${rob_pnr_idx} ")
+      printf(p" rob_head_idx=${rob_head_idx} ")
+      printf(p" rob_tail_idx=${rob_tail_idx} \n")
+  }
+  when(!(!IsOlder(rob_tail_idx, rob_pnr_idx, rob_head_idx) || full)){
+      printf(p" cycles=${io.idle_cycles} ")
+      printf(p" full=${full} ")
+      printf(p" empty=${empty} ")
+      printf(p" rob_pnr_idx=${rob_pnr_idx} ")
+      printf(p" rob_head_idx=${rob_head_idx} ")
+      printf(p" rob_tail_idx=${rob_tail_idx} \n")
+  }
   assert(!IsOlder(rob_pnr_idx, rob_head_idx, rob_tail_idx) || rob_pnr_idx === rob_tail_idx)
 
   // PNR overrunning tail likely means an entry has been marked as safe when it shouldn't have been.
@@ -1169,15 +1355,92 @@ class Rob(
   ////即，在每个周期处于分派和提交行的稳定状态时，至少有一个条目为空。
   ////我们应该在ROB指针上增加一个额外的奇偶校验位来简化这个逻辑吗?
 
-  maybe_full := !rob_deq && (rob_enq || maybe_full) || io.brupdate.b1.mispredict_mask =/= 0.U
-  full       := rob_tail === rob_head && maybe_full
   empty      := (rob_head === rob_tail) && (rob_head_vals.asUInt === 0.U)
+  maybe_full := ((!rob_deq && (rob_enq || maybe_full)) || io.brupdate.b1.mispredict_mask =/= 0.U)
+  full       := rob_tail === rob_head && maybe_full
+  
 
   io.rob_head_idx := rob_head_idx
   io.rob_tail_idx := rob_tail_idx
   io.rob_pnr_idx  := rob_pnr_idx
   io.empty        := empty
   io.ready        := (rob_state === s_normal) && !full && !r_xcpt_val
+  
+  
+  val abc = full && empty
+  when(abc || RegNext(abc) || RegNext(RegNext(abc)) || RegNext(RegNext(RegNext(abc))) || RegNext(RegNext(RegNext(RegNext(abc)))) ){
+      printf(p" cycles=${io.idle_cycles} ")    
+      printf(p" abc=${abc} ")    
+      printf(p" Regabc=${RegNext(abc)} ")    
+      printf(p" RegRegabc=${RegNext(RegNext(abc))} ")    
+      printf(p" RegRegRegabc=${RegNext(RegNext(RegNext(abc)))} ")    
+      printf(p" RegRegRegRegabc=${RegNext(RegNext(RegNext(RegNext(abc))))} ")    
+      printf(p" fullandempty \n")
+  }
+  
+  /*when(!((rob_state === s_normal) && !full && !r_xcpt_val) && RegNext(!((rob_state === s_normal) && !full && !r_xcpt_val)) && RegNext(RegNext(!((rob_state === s_normal) && !full && !r_xcpt_val))) && RegNext(RegNext(RegNext(!((rob_state === s_normal) && !full && !r_xcpt_val)))) && RegNext(RegNext(RegNext(RegNext(!((rob_state === s_normal) && !full && !r_xcpt_val))))) ){
+       printf(p" cycles=${io.idle_cycles} ")
+       printf(p" rob_state === s_normal=${rob_state === s_normal} ")
+       printf(p" !full=${!full} ")
+       printf(p" empty=${empty} ")
+       printf(p" (rob_head === rob_tail)=${(rob_head === rob_tail)} ")
+       printf(p" (rob_head_vals.asUInt === 0.U)=${(rob_head_vals.asUInt === 0.U)} ")
+       printf(p" rob_head_idx=${rob_head_idx} ")
+       printf(p" rob_tail_idx=${rob_tail_idx} ")
+       printf(p" rob_pnr_idx=${rob_pnr_idx} ")
+       printf(p" !r_xcpt_val=${!r_xcpt_val} ")
+       printf(p" rob_tail === rob_head=${rob_tail === rob_head} ")
+       printf(p" maybe_full=${maybe_full} ")
+       printf(p" !rob_deq=${!rob_deq} ")
+       printf(p" (rob_enq || maybe_full)=${(rob_enq || maybe_full)} ")
+       printf(p" io.brupdate.b1.mispredict_mask =/= 0.U=${io.brupdate.b1.mispredict_mask =/= 0.U} ")
+       printf(p" finished_committing_row=${finished_committing_row} ")
+       printf(p" (io.commit.valids.asUInt =/= 0.U)=${(io.commit.valids.asUInt =/= 0.U)} ")
+       printf(p" will_commit(0)=${will_commit(0)} ")
+       printf(p" can_commit(0)=${can_commit(0)} ")
+       printf(p" !can_throw_exception(0)=${!can_throw_exception(0)} ")
+       printf(p" !block_commit=${!block_commit} ")
+       printf(p" rob_val(rob_head)=${rob_val(rob_head)} ")
+       printf(p" !(rob_bsy(rob_head))=${!(rob_bsy(rob_head))} ")
+       printf(p" !io.csr_stall=${!io.csr_stall} ")
+       printf(p" !io.brinfosback_valid(rob_head)=${!io.brinfosback_valid(rob_head)} \n")
+
+  }
+  
+  
+      when(rob_uop(rob_head).debug_pc === 0x80002e84L.U){
+            printf(p" 0x80002e84L cycles=${io.idle_cycles} ")
+            printf(p" rob_state === s_normal=${rob_state === s_normal} ")
+            printf(p" !full=${!full} ")
+            printf(p" empty=${empty} ")
+            printf(p" !r_xcpt_val=${!r_xcpt_val} ")
+            printf(p" maybe_full=${maybe_full} ")
+            printf(p" rob_deq=${rob_deq} ")
+            printf(p" can_commit(0)=${can_commit(0)} ")
+            printf(p" will_commit(0)=${will_commit(0)} ")
+            printf(p" io.commit.valids(0)=${io.commit.valids(0)} ")
+            printf(p" io.commit.valids.asUInt=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" ((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" !(rob_head === rob_tail && !maybe_full)=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf(p" finished_committing_row=${finished_committing_row} \n")
+       }
+       when(rob_uop(rob_head).debug_pc === 0x80004244L.U){
+            printf(p" 0x80004244L cycles=${io.idle_cycles} ")
+            printf(p" rob_state === s_normal=${rob_state === s_normal} ")
+            printf(p" !full=${!full} ")
+            printf(p" empty=${empty} ")
+            printf(p" !r_xcpt_val=${!r_xcpt_val} ")
+            printf(p" maybe_full=${maybe_full} ")
+            printf(p" rob_deq=${rob_deq} ")
+            printf(p" can_commit(0)=${can_commit(0)} ")
+            printf(p" will_commit(0)=${will_commit(0)} ")
+            printf(p" io.commit.valids(0)=${io.commit.valids(0)} ")
+            printf(p" io.commit.valids.asUInt=${(io.commit.valids.asUInt =/= 0.U)} ")
+            printf(p" ((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)=${((will_commit.asUInt ^ rob_head_vals.asUInt) === 0.U)} ")
+            printf(p" !(rob_head === rob_tail && !maybe_full)=${!(rob_head === rob_tail && !maybe_full)} ")
+            printf(p" finished_committing_row=${finished_committing_row} \n")
+       }*/
+  
 
   //-----------------------------------------------
   //-----------------------------------------------
